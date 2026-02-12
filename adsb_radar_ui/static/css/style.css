@@ -1,0 +1,198 @@
+
+:root {
+  --bg: #3b3b3b;
+  --panel: #2a2a2a;
+  --accent: #9ee2ff;
+  --grid: #6b6b6b;
+  --text: #e8e8e8;
+  --muted: #bdbdbd;
+
+  --gray-bg: #cfcfcf;
+  --radar-bg: var(--gray-bg);
+  --radar-ring: #9c9c9c;
+  --radar-center: #111111;
+  --radar-text: #000000;
+  --radar-symbol: #000000;
+  --radar-trail: #000000;
+  --radar-navaid: #666666;
+  --radar-airport: #0a5d2a;
+  --radar-fix: #666666;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+#app { display: grid; grid-template-columns: 380px 1fr; height: 100%; }
+.side { background: var(--panel); padding: 12px; border-right: 2px solid #1c1c1c; overflow-y: auto; overflow-x: hidden; }
+.logo { font-weight: 800; letter-spacing: 4px; color: var(--accent); text-align: center; margin-bottom: 10px; }
+.logo .copyright{ font-size:11px; color: var(--muted); margin-top:2px; letter-spacing: 0; }
+.block { border: 1px solid #1f1f1f; padding: 10px; margin-bottom: 10px; background: #222; border-radius: 6px; }
+.block .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; }
+.block .value { font-size: 14px; }
+.block .value.small { font-size: 12px; color: var(--muted); }
+.controls { display: flex; align-items: center; gap: 6px; }
+.controls.toggles { flex-direction: column; align-items: flex-start; gap: 4px; font-size: 13px; }
+.controls input[type='number'], .controls textarea, .controls select { width: auto; padding: 6px; background: #111; color: var(--text); border: 1px solid #444; border-radius: 4px; }
+#icaoFilter { width: 100%; min-height: 60px; }
+.btn { background: #111; color: var(--text); border: 1px solid #444; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+.btn.wide { width: 100%; }
+.btn.micro{ padding:2px 6px; font-size:12px; line-height:1; border-radius:4px; }
+
+/* Traffic list sizing */
+.block.list { max-height: 70vh; overflow: hidden; display: grid; grid-template-rows: auto 1fr; }
+#trafficList { list-style: none; margin: 0; padding: 0 10px 0 0; overflow-y: auto; overflow-x: hidden; }
+#trafficList li { display: grid; grid-template-columns: 1fr auto; gap: 6px; padding: 4px 2px; border-bottom: 1px dotted #333; font-size: 12px; }
+#trafficList li span:last-child { white-space: nowrap; }
+
+.stage { position: relative; height: 100vh; }
+#radarCanvas { width: 100%; height: 100%; display: block; background: var(--radar-bg); min-height: 300px; }
+
+/* THEME: Gray (ATC) */
+body.theme-gray {
+  --bg: #3b3b3b;
+  --panel: var(--radar-bg);
+  --text: #000000;
+  --muted: #222222;
+  --accent: #005a8c;
+  --grid: #6b6b6b;
+  --radar-bg: var(--gray-bg);
+  --radar-ring: #9c9c9c;
+  --radar-center: #111111;
+  --radar-text: #000000;
+  --radar-symbol: #000000;
+  --radar-trail: #000000;
+  --radar-navaid: #666666;
+  --radar-airport: #0a5d2a;
+  --radar-fix: #666666;
+}
+body.theme-gray .side { background: var(--radar-bg); color: #000; }
+body.theme-gray .block { background: var(--radar-bg) !important; border-color: #000 !important; }
+body.theme-gray .block .label, body.theme-gray .block .value, body.theme-gray .block .value.small { color: #000; }
+body.theme-gray #trafficList li { border-bottom-color: #00000022; }
+body.theme-gray .controls input[type='number'], body.theme-gray .controls textarea, body.theme-gray .controls select { background: var(--radar-bg); color: #000; border: 1px solid #000; }
+body.theme-gray .btn { background: var(--radar-bg); color: #000; border: 1px solid #000; }
+
+/* THEME: Green (EL) — black radar + EL green */
+body.theme-green {
+  --bg: #000000;
+  --panel: #000000;
+  --text: #a6ffb2;
+  --muted: #7bd88f;
+  --accent: #00ff66;
+  --grid: #0a7a2f;
+  --radar-bg: #000000;
+  --radar-ring: #0a7a2f;
+  --radar-center: #00ff66;
+  --radar-text: #00ff66;
+  --radar-symbol: #00ff66;
+  --radar-trail: #00ff66;
+  --radar-navaid: #7dfca1;
+  --radar-airport: #7dfca1;
+  --radar-fix: #7dfca1;
+}
+
+/* THEME: Full EL (yellow) — black radar + mono EL yellow */
+body.theme-full-el-yellow .controls input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  width: 14px; height: 14px; margin-right: 6px;
+  border: 1px solid var(--radar-ring);
+  background: #000;
+  vertical-align: middle;
+  display: inline-block;
+  position: relative;
+}
+body.theme-full-el-yellow .controls input[type='checkbox']:checked {
+  background: var(--radar-ring);
+}
+body.theme-full-el-yellow .controls label { display: flex; align-items: center; gap: 6px; color: var(--radar-ring); }
+
+body.theme-full-el-yellow {
+  --bg: #000000;
+  --panel: #000000;
+  --text: #FFFF00;
+  --muted: #FFFF00;
+  --accent: #FFFF00;
+  --grid: #FFFF00;
+  --radar-bg: #000000;
+  --radar-ring: #FFFF00;
+  --radar-center: #FFFF00;
+  --radar-text: #FFFF00;
+  --radar-symbol: #FFFF00;
+  --radar-trail: #FFFF00;
+  --radar-navaid: #FFFF00;
+  --radar-airport: #FFFF00;
+  --radar-fix: #FFFF00;
+}
+body.theme-full-el-yellow .side { background: #000000; color: var(--radar-ring); }
+body.theme-full-el-yellow .logo, body.theme-full-el-yellow .logo .copyright { color: var(--radar-ring); }
+body.theme-full-el-yellow .block { background: #000000; border: 1px solid var(--radar-ring); }
+body.theme-full-el-yellow .block .label, body.theme-full-el-yellow .block .value, body.theme-full-el-yellow .block .value.small { color: var(--radar-ring); }
+body.theme-full-el-yellow .controls input[type='number'], body.theme-full-el-yellow .controls select, body.theme-full-el-yellow .controls input[type='text'] { background: #000000; color: var(--radar-ring); border: 1px solid var(--radar-ring); }
+body.theme-full-el-yellow .btn { background: #000000; border: 1px solid var(--radar-ring); color: var(--radar-ring); }
+body.theme-full-el-yellow .btn:hover { background: #000000; filter: brightness(120%); }
+body.theme-full-el-yellow .traffic a, body.theme-full-el-yellow #trafficList a, body.theme-full-el-yellow #trafficList a:visited { color: inherit; }
+body.theme-full-el-yellow .sq.emg { color: inherit; font-weight: inherit; }
+
+/* THEME: Full EL (mono) — black radar + mono EL green */
+body.theme-full-el {
+  --bg: #000000;
+  --panel: #000000;
+  --text: #0a7a2f;
+  --muted: #0a7a2f;
+  --accent: #0a7a2f;
+  --grid: #0a7a2f;
+  --radar-bg: #000000;
+  --radar-ring: #0a7a2f;
+  --radar-center: #0a7a2f;
+  --radar-text: #0a7a2f;
+  --radar-symbol: #0a7a2f;
+  --radar-trail: #0a7a2f;
+  --radar-navaid: #0a7a2f;
+  --radar-airport: #0a7a2f;
+  --radar-fix: #0a7a2f;
+}
+body.theme-full-el .side { background: #000000; color: var(--radar-ring); }
+body.theme-full-el .logo, body.theme-full-el .logo .copyright { color: var(--radar-ring); }
+body.theme-full-el .block { background: #000000; border: 1px solid var(--radar-ring); }
+body.theme-full-el .block .label, body.theme-full-el .block .value, body.theme-full-el .block .value.small { color: var(--radar-ring); }
+body.theme-full-el .controls input[type='number'], body.theme-full-el .controls textarea, body.theme-full-el .controls select { background: #000; color: var(--radar-ring); border: 1px solid var(--radar-ring); }
+body.theme-full-el .btn { background: #000000; color: var(--radar-ring); border: 1px solid var(--radar-ring); }
+body.theme-full-el .btn:hover { border-color: var(--radar-ring); }
+/* Full EL custom square checkboxes */
+body.theme-full-el .controls input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  width: 14px; height: 14px; margin-right: 6px;
+  border: 1px solid var(--radar-ring);
+  background: #000;
+  vertical-align: middle;
+  display: inline-block;
+  position: relative;
+}
+body.theme-full-el .controls input[type='checkbox']:checked {
+  background: var(--radar-ring);
+}
+body.theme-full-el .controls label { display: flex; align-items: center; gap: 6px; color: var(--radar-ring); }
+
+/* Traffic list emergency squawk in Gray/Green only */
+.sq { font-variant-numeric: tabular-nums; }
+body.theme-gray .sq.emg,
+body.theme-green .sq.emg { color: #ff2d2d; font-weight: 700; }
+body.theme-full-el .sq.emg { color: inherit; font-weight: inherit; }
+
+/* Make traffic links look like normal text */
+.traffic a, .traffic a:visited { color: inherit; text-decoration: none; }
+.traffic a:hover { text-decoration: none; }
+/* Copy button */
+.copybtn { color: inherit; float: right; font-weight: 400; font-size: .9em; opacity: .85; text-decoration: none; }
+.copybtn:hover { opacity: 1; }
+
+/* Traffic list links should look like normal text */
+#trafficList a, #trafficList a:visited { color: inherit; text-decoration: none; }
+#trafficList a:hover, #trafficList a:active { text-decoration: none; }
+
+.copybtn:visited { color: inherit; }
