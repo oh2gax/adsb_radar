@@ -85,6 +85,7 @@ let showRings = (localStorage.getItem('showRings') ?? '1') === '1';
 let ringSpacing = localStorage.getItem('ringSpacing') || 'auto';
 
 const FT_PER_HPA = 27;
+let icaoRanges = [];  // parsed ICAO24 filter, set after parseRanges is defined
 let aircraft = new Map();
 let trails = new Map();
 let trailLastSample = new Map();
@@ -208,7 +209,7 @@ if(zoomInBtn) zoomInBtn.onclick = () => { rangeNm = Math.max(10, rangeNm - 10); 
 if(zoomOutBtn) zoomOutBtn.onclick = () => { rangeNm = Math.min(400, rangeNm + 10); if(rangeInput) rangeInput.value = rangeNm; savePrefs(); try{requestOverlayFetch()}catch(_e){}; };
 if(btnZoomIn) btnZoomIn.onclick = () => zoomInBtn && zoomInBtn.onclick();
 if(btnZoomOut) btnZoomOut.onclick = () => zoomOutBtn && zoomOutBtn.onclick();
-if(rangeInput) rangeInput.onchange = () => { try{requestOverlayFetch()}catch(e){};  rangeNm = Math.max(5, Math.min(400, parseFloat(rangeInput.value) || 20)); savePrefs(); };
+if(rangeInput) rangeInput.onchange = () => { rangeNm = Math.max(5, Math.min(400, parseFloat(rangeInput.value) || 20)); rangeInput.value = rangeNm; savePrefs(); try{requestOverlayFetch()}catch(e){} };
 if(showCallsignCb) showCallsignCb.onchange = () => { showCallsign = showCallsignCb.checked; savePrefs(); };
 if(showAltCb) showAltCb.onchange = () => { showAlt = showAltCb.checked; savePrefs(); };
 if(showHdgCb) showHdgCb.onchange = () => { showHdg = showHdgCb.checked; savePrefs(); };
@@ -219,7 +220,7 @@ if(showSquawkCb) showSquawkCb.onchange = () => { showSquawk = showSquawkCb.check
 if(showVectorCb) showVectorCb.onchange = () => { showVector = showVectorCb.checked; savePrefs(); };
 if(preventOverlapCb) preventOverlapCb.onchange = () => { preventOverlap = preventOverlapCb.checked; savePrefs(); };
 if(vectorMinsSel) vectorMinsSel.onchange = () => { vectorMins = parseFloat(vectorMinsSel.value)||0.5; savePrefs(); };
-if(applyFilterBtn) applyFilterBtn.onclick = () => { localStorage.setItem('icaoRanges', icaoFilterTA.value.trim()); };
+if(applyFilterBtn) applyFilterBtn.onclick = () => { localStorage.setItem('icaoRanges', icaoFilterTA.value.trim()); icaoRanges = parseRanges(icaoFilterTA.value.trim()); };
 if(labelModeSel) labelModeSel.onchange = () => { labelMode = labelModeSel.value; savePrefs(); };
 if(showAirportsCb) showAirportsCb.onchange = () => { showAirports = showAirportsCb.checked; savePrefs(); };
 if(showNavaidsCb) showNavaidsCb.onchange = () => { showNavaids = showNavaidsCb.checked; savePrefs(); };
@@ -227,13 +228,51 @@ if(showFixesCb) showFixesCb.onchange = () => { showFixes = showFixesCb.checked; 
 const navFetch = ()=>{ fetchNavaids(); fetchNavMeta(); loadOverlayMeta(); };
 if(navRangeSel) navRangeSel.onchange = () => { navRangeNm = parseFloat(navRangeSel.value)||100; savePrefs(); navFetch(); };
 if(reloadNavBtn) reloadNavBtn.onclick = navFetch;
-if(staleTimeoutSel) staleTimeoutSel.onchange = () => { staleTimeoutMin = parseFloat(staleTimeoutSel.value)||2; savePrefs(); };
-if(posTimeoutSel) posTimeoutSel.onchange = () => { posLossTimeoutSec = parseFloat(posTimeoutSel.value)||30; savePrefs(); };
+if(staleTimeoutSel) staleTimeoutSel.onchange = () => { const v = parseFloat(staleTimeoutSel.value); staleTimeoutMin = Number.isFinite(v) ? v : 2; savePrefs(); };
+if(posTimeoutSel) posTimeoutSel.onchange = () => { const v = parseFloat(posTimeoutSel.value); posLossTimeoutSec = Number.isFinite(v) ? v : 30; savePrefs(); };
 if(trafficSortSel) trafficSortSel.onchange = () => { trafficSort = trafficSortSel.value; savePrefs(); };
+// --- Auto QNH from the latest METAR (server: /api/qnh, refreshed every 10 min) ---
+// On by default; the user's choice is remembered.
+let qnhAuto = (localStorage.getItem('qnhAuto') ?? '1') === '1';
+const qnhAutoCb = document.getElementById('qnhAuto');
+const qnhInfoEl = document.getElementById('qnhInfo');
+function applyQnhAutoUi(){
+  if(qnhAutoCb) qnhAutoCb.checked = qnhAuto;
+  for(const el of [qnhInput, qnhUpBtn, qnhDownBtn]){ if(el) el.disabled = qnhAuto; }
+  if(qnhInfoEl && !qnhAuto){ qnhInfoEl.textContent = ''; qnhInfoEl.title = ''; }
+}
+async function fetchQnh(){
+  if(!qnhAuto) return;
+  try{
+    const r = await fetch('/api/qnh', {cache:'no-store'});
+    const j = await r.json();
+    if(!qnhAuto) return;
+    if(Number.isFinite(j.qnh)){
+      qnh = j.qnh;
+      if(qnhInput) qnhInput.value = String(Math.round(qnh));
+      savePrefs();
+      const old = (j.error && Number.isFinite(j.age_sec)) ? ` (last good ${Math.round(j.age_sec/60)} min ago)` : '';
+      if(qnhInfoEl){ qnhInfoEl.textContent = `METAR ${j.station} ${j.obs_time || ''}: Q${Math.round(qnh)}${old}`; qnhInfoEl.title = j.metar || ''; }
+    } else if(qnhInfoEl){
+      qnhInfoEl.textContent = `METAR ${j.station || ''} not available – using QNH ${Math.round(qnh)}`;
+      qnhInfoEl.title = j.error || '';
+    }
+  }catch(e){
+    if(qnhInfoEl){ qnhInfoEl.textContent = `METAR not available – using QNH ${Math.round(qnh)}`; qnhInfoEl.title = ''; }
+  }
+}
+if(qnhAutoCb) qnhAutoCb.onchange = () => {
+  qnhAuto = qnhAutoCb.checked;
+  localStorage.setItem('qnhAuto', qnhAuto ? '1' : '0');
+  applyQnhAutoUi();
+  fetchQnh();
+};
+applyQnhAutoUi(); fetchQnh();
+setInterval(fetchQnh, 5*60*1000);
+
 if(qnhInput) qnhInput.onchange = () => { const v = parseFloat(qnhInput.value); qnh = Number.isFinite(v)? v : 1013; qnhInput.value = String(Math.round(qnh)); savePrefs(); };
 if(qnhUpBtn) qnhUpBtn.onclick = () => { let v = parseFloat(qnhInput.value||'1013'); if(!Number.isFinite(v)) v = 1013; v = Math.min(1050, v+1); qnh = v; qnhInput.value = String(Math.round(v)); savePrefs(); };
 if(qnhDownBtn) qnhDownBtn.onclick = () => { let v = parseFloat(qnhInput.value||'1013'); if(!Number.isFinite(v)) v = 1013; v = Math.max(950, v-1); qnh = v; qnhInput.value = String(Math.round(v)); savePrefs(); };
-if(themeSelect) themeSelect.onchange = () => { theme = themeSelect.value; applyTheme(); };
 if(showRingsCb) showRingsCb.onchange = () => { showRings = showRingsCb.checked; savePrefs(); };
 if(ringSpacingSel) ringSpacingSel.onchange = () => { ringSpacing = ringSpacingSel.value; savePrefs(); };
 
@@ -254,7 +293,7 @@ if(applyCenterBtn){
       localStorage.setItem('centerLat', String(la));
       localStorage.setItem('centerLon', String(lo));
       if(centerReadoutEl) centerReadoutEl.textContent = `${la.toFixed(4)}, ${lo.toFixed(4)}`;
-      fetchNavaids(); fetchNavMeta(); loadOverlayMeta();
+      fetchNavaids(); fetchNavMeta(); requestOverlayFetch();
     }
   };
 }
@@ -262,11 +301,11 @@ if(applyCenterBtn){
 // Utils
 function parseRanges(str){
   if(!str) return [];
-  const parts = str.split(/[,;\\s]+/).filter(Boolean);
+  const parts = str.split(/[,;\s]+/).filter(Boolean);
   const out = [];
   for(const p of parts){
     if(p.includes('-')){
-      const [a,b] = p.split('-');
+      const [a,b] = p.split('-').map(x => x.trim());
       const lo = parseInt(a, 16), hi = parseInt(b, 16);
       if(Number.isFinite(lo) && Number.isFinite(hi)) out.push([Math.min(lo,hi), Math.max(lo,hi)]);
     } else {
@@ -276,6 +315,7 @@ function parseRanges(str){
   }
   return out;
 }
+icaoRanges = parseRanges(localStorage.getItem('icaoRanges') || '');
 function inRanges(hex, ranges){
   if(ranges.length === 0) return true;
   const v = parseInt(hex, 16);
@@ -338,6 +378,7 @@ function altToHTML(s){
 }
 let _trafficLastHTML = '';
 let _trafficLastTs = 0;
+let _trafficPointerDown = false;  // see traffic list click handling near the end
 
 // Canvas
 function resizeCanvas(){
@@ -356,10 +397,19 @@ document.addEventListener('DOMContentLoaded', resizeCanvas);
 resizeCanvas();
 
 // Data
+let lastDataOkMs = Date.now();     // last successful /api/aircraft response
+const SERVER_LOST_SEC = 30;        // clear targets if the server itself is unreachable this long
+function setStatus(text, warn){
+  if(!statusEl) return;
+  statusEl.textContent = text;
+  statusEl.classList.toggle('warn', !!warn);
+}
 async function fetchData(){
   try{
     const res = await fetch('/api/aircraft', {cache:'no-store'});
+    if(!res.ok) throw new Error('HTTP ' + res.status);
     const j = await res.json();
+    lastDataOkMs = Date.now();
     const arr = Array.isArray(j.aircraft) ? j.aircraft : [];
     let count = 0;
     const next = new Map();
@@ -392,18 +442,31 @@ async function fetchData(){
       acState.set(ac.hex, s);
     }
     for(const hex of Array.from(acState.keys())){ if(!next.has(hex)) acState.delete(hex); }
+    // forget trails of aircraft that are no longer in the feed
+    for(const hex of Array.from(trails.keys())){ if(!next.has(hex)){ trails.delete(hex); trailLastSample.delete(hex); } }
     aircraft = next;
-    if(statusEl) statusEl.textContent = `Targets: ${count} | Updated: ${new Date().toISOString().slice(11,19)}Z`;
+    const upd = new Date().toISOString().slice(11,19) + 'Z';
+    if(j.feed_lost){
+      const age = Number.isFinite(j.feed_age) ? `no data for ${Math.round(j.feed_age)} s` : 'no data yet';
+      setStatus(`FEED LOST – ${age}${j.error ? ' (' + j.error + ')' : ''} | Checked: ${upd}`, true);
+    } else if(j.error){
+      setStatus(`Targets: ${count} | Updated: ${upd} | Feed problem: ${j.error}`, true);
+    } else {
+      setStatus(`Targets: ${count} | Updated: ${upd}`, false);
+    }
   }catch(e){
-    if(statusEl) statusEl.textContent = 'Error fetching data';
+    const down = Math.round((Date.now() - lastDataOkMs)/1000);
+    if(down > SERVER_LOST_SEC && aircraft.size){ aircraft = new Map(); acState.clear(); trails.clear(); trailLastSample.clear(); }
+    setStatus(`Radar server not reachable (${down} s)`, true);
   }
 }
 setInterval(fetchData, 5000); fetchData();
 
-// Navaids: fetch all (raw) and filter client-side
+// Navaids: server returns only the points within navRangeNm of the current center
 async function fetchNavaids(){
   try{
-    const res = await fetch(`/api/navaids?raw=1`, {cache:'no-store'});
+    const q = `clat=${center.lat.toFixed(5)}&clon=${center.lon.toFixed(5)}&nmr=${navRangeNm}`;
+    const res = await fetch(`/api/navaids?${q}`, {cache:'no-store'});
     const raw = await res.json();
     function within(lat, lon, nmr){
       if(!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
@@ -667,6 +730,11 @@ function drawOverlays(cx,cy,R){
   ctx.restore();
 }
 
+// Stale = position has not changed for the stale timeout -> removed from scope and traffic list.
+// (Position-loss timeout, which is shorter, first moves the target to the no-position list.)
+function isStale(s, now){
+  return staleTimeoutMin > 0 && !!s && !!s.stationarySince && (now - s.stationarySince) > staleTimeoutMin*60*1000;
+}
 function drawScope(){
   const w = canvas.width / DPR;
   const h = canvas.height / DPR;
@@ -703,13 +771,14 @@ function drawScope(){
   ctx.fillText(`Range: 0 – ${rangeNm} NM`, 10, 8);
 
   window.labelBoxes = [];
-  const ranges = parseRanges(localStorage.getItem('icaoRanges') || '');
+  const ranges = icaoRanges;
   const posList = [];
   const now = Date.now();
 
   // Draw aircraft with position
   for(const ac of aircraft.values()){
     const s = acState.get(ac.hex) || {};
+    if(isStale(s, now)) continue;
     const hasPos = Number.isFinite(ac.lat) && Number.isFinite(ac.lon);
     let posFrozen = false;
     if(posLossTimeoutSec > 0){
@@ -719,7 +788,6 @@ function drawScope(){
     if(!hasPos || posFrozen) continue; // treat as MODE-S below
 
     if(!inRanges(ac.hex, ranges)) continue;
-    if(staleTimeoutMin>0 && s.stationarySince && (now - s.stationarySince) > staleTimeoutMin*60*1000) continue;
 
     const xy = projectNm(ac.lat, ac.lon);
     const rnm = Math.hypot(xy.x, xy.y);
@@ -730,12 +798,13 @@ function drawScope(){
     const py = cy - (xy.y / rangeNm) * R;
 
     // Trails (3x3 squares behind target; skip last sample so trail starts behind symbol)
+    // Stored as lat/lon so they stay correct after zoom, center change or window resize.
     if(showTrail){
       const nowMs = Date.now();
       const last = trailLastSample.get(ac.hex) || 0;
       if(nowMs - last >= 5000){
         const arr = trails.get(ac.hex) || [];
-        arr.push({x:px, y:py, ts: nowMs});
+        arr.push({lat:ac.lat, lon:ac.lon, ts: nowMs});
         trails.set(ac.hex, arr);
         trailLastSample.set(ac.hex, nowMs);
       }
@@ -743,9 +812,11 @@ function drawScope(){
       const cutoff = nowMs - (trailLenSec*1000);
       while(arr2.length && arr2[0].ts < cutoff) arr2.shift();
       trails.set(ac.hex, arr2);
-      for(let i=0;i<arr2.length;i++){
-        if(i === arr2.length - 1) continue;
-        const p = arr2[i]; setFill(colors.trail); ctx.fillRect(Math.round(p.x)-1, Math.round(p.y)-1, 3, 3);
+      setFill(colors.trail);
+      for(let i=0;i<arr2.length-1;i++){
+        const tp = projectNm(arr2[i].lat, arr2[i].lon);
+        const tx = cx + (tp.x / rangeNm) * R, ty = cy - (tp.y / rangeNm) * R;
+        ctx.fillRect(Math.round(tx)-1, Math.round(ty)-1, 3, 3);
       }
     }
 
@@ -858,6 +929,7 @@ if(isTypeOn() && ac.type){ infoParts.push(ac.type); } /*TYPE_AFTER_REG*/
   for(const ac of aircraft.values()){
     if(!ac.hex || drawnHex.has(ac.hex)) continue;
     if(!inRanges(ac.hex, ranges)) continue;
+    if(isStale(acState.get(ac.hex), now)) continue;
     let label = (labelMode==='callsign') ? (ac.callsign || ac.hex) : (labelMode==='icao'? ac.hex : ((showCallsign && ac.callsign)? ac.callsign : ac.hex));
     
     label = label + '*';
@@ -945,7 +1017,7 @@ const lis = rows.slice(0, 80).map(function(item){
 });
   const html = lis.join('');
   const nowTs = Date.now();
-  if(trafficListEl && (html !== _trafficLastHTML) && (nowTs - _trafficLastTs > 250)){
+  if(trafficListEl && !_trafficPointerDown && (html !== _trafficLastHTML) && (nowTs - _trafficLastTs > 250)){
     trafficListEl.innerHTML = html;
     _trafficLastHTML = html;
     _trafficLastTs = nowTs;
@@ -962,29 +1034,17 @@ setInterval(fmtClock, 250); fmtClock();
 function animate(){ try{ drawScope(); } catch(e){ try{ const el=document.getElementById('status'); if(el) el.textContent = 'Render error: ' + (e.message||e); }catch(_){} } requestAnimationFrame(animate); }
 animate();
 
-// Copy traffic list to clipboard
-document.getElementById('copyTrafficBtn')?.addEventListener('click', (e)=>{
-  e.preventDefault();
-  const ul=document.getElementById('trafficList'); if(!ul) return;
-  const lines = Array.from(ul.querySelectorAll('li')).map(li=>li.textContent.trim());
-  const txt = lines.join('\n');
-  if(navigator.clipboard?.writeText){ navigator.clipboard.writeText(txt).then(()=>{ statusEl.textContent='Traffic copied to clipboard'; setTimeout(()=>{ if(statusEl.textContent==='Traffic copied to clipboard') statusEl.textContent='—'; }, 1200); }); }
-});
 
-
-// --- Traffic list: force FR24 links to open in a new tab even if parent handlers exist
+// --- Traffic list: links open in a new tab via target="_blank".
+// The list is rebuilt when data changes; pause rebuilding while a mouse button / touch is down
+// on it, so a click is never lost because its link was replaced between press and release.
 (function(){
   const tl = document.getElementById('trafficList');
-  if (tl) {
-    tl.addEventListener('click', function(e){
-      const a = e.target.closest('a');
-      if (a && tl.contains(a)) {
-        try { e.stopImmediatePropagation(); } catch(_) {}
-        // Do not preventDefault; some browsers need default for middle-click etc.
-        window.open(a.href, '_blank', 'noopener');
-      }
-    }, true); // capture phase to beat other handlers
-  }
+  if (!tl) return;
+  tl.addEventListener('pointerdown', () => { _trafficPointerDown = true; });
+  const release = () => { if(_trafficPointerDown) setTimeout(() => { _trafficPointerDown = false; }, 300); };
+  window.addEventListener('pointerup', release);
+  window.addEventListener('pointercancel', release);
 })();
 
 // --- Traffic Copy: robust copy with fallback (works on HTTP + Firefox)

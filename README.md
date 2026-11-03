@@ -1,249 +1,104 @@
-# ADS-B Radar v9.0.0_Beta
+# ADS-B Radar
 
-A lightweight web-based ADS-B radar display written in Python (Flask)
-and JavaScript.
+A lightweight web radar display for ADS-B / MLAT traffic, written in Python (Flask) and
+plain JavaScript (canvas). © Otso Laakso / OH2GAX.
 
-This project provides a real-time radar-style visualization of aircraft
-positions using ADS-B / MLAT data.\
-It supports TCP-based JSON feeds and displays aircraft movement,
-altitude, speed, squawk, registration, and more --- directly in a
-browser.
+Live: https://radar.oh2gax.org
 
-------------------------------------------------------------------------
-
-## ✈ Overview
-
-ADS-B Radar is designed to:
-
--   Connect to a TCP JSON data source (e.g., local ADS-B receiver
-    backend)
--   Parse aircraft position and metadata
--   Display aircraft on a radar-style screen
--   Show trails, headings, selected altitude, squawk, and aircraft
-    information
--   Optionally enrich registration/type using BaseStation.sqb database
--   Run as a lightweight Flask web server on Linux
-
-The radar interface works in modern browsers and requires no additional
-frontend dependencies.
-
-------------------------------------------------------------------------
-
-## 🔧 Features
-
--   TCP-based JSON polling (configurable host & port)
--   Robust error handling (no blank screen on temporary feed failure)
--   Aircraft position tracking with heading vector
--   Altitude (ft), speed (kt), vertical rate (ft/min)
--   Selected altitude (formatted as FL-style values)
--   Squawk display
--   Registration and aircraft type display
--   Optional BaseStation.sqb metadata fallback
--   Adjustable radar zoom range
--   Trail display for aircraft movement
--   Works on Ubuntu / Debian-based systems
-
-------------------------------------------------------------------------
-
-## 🖥 System Requirements
-
--   Linux (Ubuntu/Debian recommended)
--   Python 3.9+
--   Flask
--   SQLite3 (for BaseStation.sqb lookup, optional)
-
-------------------------------------------------------------------------
-
-## 🚀 Installation (Ubuntu / Debian)
-
-### 1. Clone Repository
-
-``` bash
-git clone https://github.com/YOUR_USERNAME/adsb_radar.git
-cd adsb_radar
+```
+MODE-S Wind TCP feed (127.0.0.1:31009) → Flask backend (app_beta.py) → /api/* → browser radar (radar.js)
 ```
 
-### 2. Install Python Dependencies
+## Version numbering
 
-``` bash
-sudo apt update
-sudo apt install python3 python3-pip python3-venv
+The version is the date of the latest git commit (Helsinki time) as `v.DDMMYYYY`, e.g.
+`v.03112026`. All changes committed on the same day share one version; a commit on a new
+day is a new version. It is worked out automatically when the app starts and shown in the
+top-left logo; nothing has to be edited by hand.
+
+## Features
+
+- Polls a TCP JSON feed (connect, read one JSON list, close) every 3 s
+- Targets with callsign, squawk (7500/7600/7700 in red), altitude/FL with trend and
+  selected altitude, ground speed, registration and type, speed vector and trail
+- Registration / type from BaseStation.sqb, completed from aircraft_ref.db (tar1090-db)
+  when the feed has none — the files MODE-S Wind keeps up to date every morning
+- Auto QNH from the latest METAR (default EFHK) for altitudes below 5000 ft
+- Airports, navaids, waypoints and line overlays (coast, FIR, ATS routes, ILS, …)
+- Four themes, label overlap avoidance, ICAO24 hex range filter, traffic list with links
+- "FEED LOST" warning when the feed stops; targets are cleared after 30 s
+- All viewer settings are kept in the browser (localStorage); "Reset UI" clears them
+
+## Running on the AWS server
+
+The app runs as the systemd service `adsb-radar` on 127.0.0.1:5300 behind nginx
+(`radar.oh2gax.org`), from `/home/ubuntu/adsb_radar`. See `deploy/adsb-radar.service`.
+
+### Automatic updates from GitHub — `update.sh`
+
+```bash
+cd ~/adsb_radar
+bash update.sh                  # update now if GitHub has new commits
+bash update.sh --install-timer  # check GitHub every 2 minutes automatically (once)
+bash update.sh --status         # running version, timer state, recent update log
+bash update.sh --force          # reinstall packages + restart even if nothing is new
+bash update.sh --remove-timer   # stop automatic updates
 ```
 
-(Optional but recommended)
+An update: `git fetch` → reset to `origin/main` → `pip install` if requirements.txt changed
+→ Python syntax check → restart service → health check. If the new version does not start,
+it rolls back to the previous commit and skips that commit until a newer one is pushed.
+Hand edits made on the server are saved to `.update_state/*.patch` before being replaced —
+make changes in the repository instead. Update log: `journalctl -u adsb-radar-update`.
 
-``` bash
-python3 -m venv venv
-source venv/bin/activate
-pip install flask
+### Development workflow
+
+1. Edit and test locally (`bash adsb_radar_ui/run_beta.sh`, or `python app_beta.py`)
+2. Commit and push to `main`
+3. Within 2 minutes the server updates itself; the logo shows the new version
+
+## Configuration (environment variables)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ADSB_TCP_HOST` / `ADSB_TCP_PORT` | 127.0.0.1 / 31009 | JSON feed |
+| `HOST` / `PORT` | 127.0.0.1 / 5300 | web server address |
+| `POLL_SECONDS` | 3 | feed poll interval |
+| `CENTER_LAT` / `CENTER_LON` | 60.3172 / 24.9633 | default radar center (EFHK) |
+| `REG_DB_PATH` | `~/mode_s_wind/data/BaseStation.sqb` | registration database (read-only) |
+| `REF_DB_PATH` | `~/mode_s_wind/data/aircraft_ref.db` | tar1090-db reference data; empty = off |
+| `METAR_STATION` | EFHK | Auto QNH station |
+| `METAR_URL` | NOAA tgftp `{icao}.TXT` | METAR source (same as MODE-S Wind) |
+| `FEED_STALE_SECONDS` | 30 | feed silence before targets are cleared |
+| `MAX_RANGE_NM` | 0 | drop targets beyond this range (0 = off) |
+| `DEBUG_API` | 0 | `1` enables `/api/debug/reg?hex=…` and `/api/debug/schema` |
+
+Databases are opened read-only and never created; a changed or replaced file is noticed
+within 30 s. If `~/mode_s_wind/data` does not exist, `adsb_radar_ui/data/BaseStation.sqb` is used.
+
+## Feed format
+
+A TCP server that sends one JSON array of aircraft per connection and closes it:
+
+```json
+[{"hex": "461E1A", "fli": "FIN7LH", "lat": 60.317, "lon": 24.963, "alt": 36000,
+  "spd": 450, "trk": 180, "vrt": 0, "squ": "2034", "alts": 36000, "typ": "A321", "reg": "OH-LZA"}]
 ```
 
-### 3. Configure TCP Data Source
+`alts` is the selected (MCP) altitude in feet. `reg` and `typ` are optional.
 
-Edit `config.py` if needed:
+## API
 
-``` python
-TCP_HOST = "127.0.0.1"
-TCP_PORT = 31009
-```
+| Endpoint | Returns |
+|---|---|
+| `/api/aircraft` | targets, `feed_age`, `error`, `feed_lost`, `version` |
+| `/api/navaids?clat=&clon=&nmr=` | airports / navaids / waypoints within `nmr` NM |
+| `/api/overlays_meta`, `/api/overlays_fetch` | line overlays (GeoJSON in `data/overlays`) |
+| `/api/qnh` | latest METAR and QNH |
 
-Or use environment variables:
+## Folders
 
-``` bash
-export ADSB_TCP_HOST=127.0.0.1
-export ADSB_TCP_PORT=31009
-```
-
-### 4. Start the Radar Server
-
-``` bash
-bash run_beta.sh
-```
-
-The web interface will be available at:
-
-    http://localhost:5320
-
-------------------------------------------------------------------------
-
-## 📡 TCP Data Format
-
-The radar expects a TCP server that:
-
-1.  Accepts connection
-2.  Sends JSON data
-3.  Closes connection (EOF)
-
-The JSON must be a **top-level array of aircraft objects**, for example:
-
-``` json
-[
-  {
-    "hex": "AABBCC",
-    "fli": "FIN123",
-    "lat": 60.317,
-    "lon": 24.963,
-    "alt": 36000,
-    "spd": 450,
-    "trk": 180,
-    "vrt": 0,
-    "typ": "A320",
-    "reg": "OH-LXA",
-    "squ": "7000",
-    "alts": 36000
-  }
-]
-```
-
-------------------------------------------------------------------------
-
-## 🧭 Web Interface (Left Pane Settings)
-
-The left control pane allows adjustment of:
-
-### Zoom (NM)
-
-Sets radar range in nautical miles.\
-Aircraft beyond this range are still visible if within the screen area.
-
-### Trails
-
-Enable/disable aircraft movement trails.
-
-### Range Filter
-
-Filter aircraft based on ICAO24 hex codes.
-
-### Stale Timeout
-
-Removes aircraft not updated within configured time.
-
-### Position Loss Timeout
-
-Controls how long aircraft remain visible if position data is lost.
-
-------------------------------------------------------------------------
-
-## 🛰 Radar Screen Display
-
-Each aircraft symbol displays:
-
--   Heading (rotated according to track)
--   Callsign (if available)
--   Altitude in feet
--   Speed in knots
--   Vertical rate indicator
--   Squawk code
--   Registration
--   Aircraft type
--   Selected altitude (formatted as FL-style, e.g. 040, 360)
-
-### Visual Elements
-
--   Circular range rings
--   Heading vectors
--   Aircraft trails
--   Center reference marker
--   Smooth movement updates
-
-Aircraft outside the selected zoom ring are still displayed within the
-full screen area.
-
-------------------------------------------------------------------------
-
-## 🗂 BaseStation.sqb Enrichment (Optional)
-
-If JSON does not provide `reg` or `typ`, the system can look up metadata
-from:
-
-    BaseStation.sqb
-
-This is optional and only fills missing fields.
-
-------------------------------------------------------------------------
-
-## ⚙ Configuration Options (config.py)
-
-``` python
-TCP_HOST
-TCP_PORT
-CENTER_LAT
-CENTER_LON
-POLL_SECONDS
-PORT
-MAX_RANGE_NM
-NAV_DATA_DIR
-```
-
-------------------------------------------------------------------------
-
-## 📊 Architecture
-
-    TCP JSON Feed  →  Flask Backend  →  Internal Cache  →  REST API  →  Browser Radar UI
-
-Backend polls every 5 seconds (configurable).\
-Frontend updates dynamically without full page reload.
-
-------------------------------------------------------------------------
-
-## 🛠 Troubleshooting
-
-If aircraft disappear briefly:
-
--   Check TCP feed availability
--   Ensure JSON is valid
--   Verify firewall allows local TCP connections
--   Confirm POLL_SECONDS matches feed frequency
-
-------------------------------------------------------------------------
-
-## 📜 License
-
-Add your license information here.
-
-------------------------------------------------------------------------
-
-## 🙌 Credits
-
-Developed and customized for advanced ADS-B and MLAT radar visualization
-use cases.
+- `adsb_radar_ui/` – the application (Flask app, static files, data)
+- `deploy/` – reference systemd unit
+- `adsb_json_data/` – old Pi → server SSH stream (not needed when MODE-S Wind runs on the same server)
+- `tmp_files/` – local scratch folder, not in git

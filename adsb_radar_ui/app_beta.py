@@ -1,24 +1,48 @@
 
-import os, time, threading, csv, sys, json, socket
-from flask import Flask, jsonify, render_template, request
+import os, re, time, threading, csv, sys, json, socket, subprocess, sqlite3, urllib.request
+from datetime import datetime
+from math import radians, cos
+from urllib.request import pathname2url
+from flask import Flask, jsonify, render_template, request, abort
 from overlays import register_overlays
-import requests
-import sqlite3
-import threading
 import config
 
 app = Flask(__name__, static_url_path="/static")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-APP_VERSION = "RADAR v9.0.0_Beta"
 
-_cache = {"ts": 0, "data": None, "err": None}
+
+def _compute_version():
+    """Version = date of the latest git commit in Helsinki time, e.g. v.03112026.
+    Returns (version, asset_tag); asset_tag (commit hash) busts browser caches after updates."""
+    def git(*args):
+        try:
+            r = subprocess.run(["git", *args], cwd=BASE_DIR, capture_output=True, text=True, timeout=5)
+            return r.stdout.strip() if r.returncode == 0 else ""
+        except Exception:
+            return ""
+    ts, short = git("log", "-1", "--format=%ct"), git("log", "-1", "--format=%h")
+    if ts.isdigit():
+        try:
+            from zoneinfo import ZoneInfo
+            dt = datetime.fromtimestamp(int(ts), ZoneInfo("Europe/Helsinki"))
+        except Exception:
+            dt = datetime.fromtimestamp(int(ts))
+        return "v." + dt.strftime("%d%m%Y"), short or ts
+    return "v.dev", str(int(time.time()))
+
+
+APP_VERSION, ASSET_TAG = _compute_version()
+print(f"[app] adsb_radar {APP_VERSION} ({ASSET_TAG})", flush=True)
+
+# data = last good result, ok_ts = time of last successful feed read, err = last error
+_cache = {"ts": 0, "ok_ts": 0, "data": None, "err": None}
 
 def _nm_distance(lat1, lon1, lat2, lon2):
     from math import radians, sin, cos, atan2, sqrt
     dlat = radians(lat2 - lat1)
     dlon = radians(lon2 - lon1)
     a = sin(dlat/2)**2 + cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
-    c = 2 * atan2(sqrt(1-a), sqrt(a))
+    c = 2 * atan2(sqrt(a), sqrt(1-a))
     km = 6371.0 * c
     return km * 0.539957
 
@@ -34,226 +58,274 @@ def _within_range(obj):
     except Exception:
         return True
 
-# --- Registration lookup (smart schema + env overrides + logging) ---
-REG_DB_PATH = os.environ.get("REG_DB_PATH", os.path.join(BASE_DIR, "data", "BaseStation.sqb"))
-REG_TABLE   = os.environ.get("REG_TABLE")      # optional override
-REG_ICAO_COL= os.environ.get("REG_ICAO_COL")   # optional override
-REG_REG_COL = os.environ.get("REG_REG_COL")    # optional override
+# --- Registration / type lookup ---
+# 1. BaseStation.sqb (table Aircraft) - on AWS the copy that mode_s_wind completes every morning
+# 2. aircraft_ref.db (table ac, ~620 000 aircraft from tar1090-db, also from mode_s_wind)
+#    fills whatever BaseStation.sqb does not have.
+# Both are opened read-only and never created. Results are cached with an expiry, and the cache
+# is cleared when either file changes, so daily updates show up without restarting this service.
+REG_DB_PATH  = config.REG_DB_PATH
+REF_DB_PATH  = config.REF_DB_PATH
+REG_TABLE    = os.environ.get("REG_TABLE")      # optional override
+REG_ICAO_COL = os.environ.get("REG_ICAO_COL")   # optional override
+REG_REG_COL  = os.environ.get("REG_REG_COL")    # optional override
+REG_TYPE_COL = os.environ.get("REG_TYPE_COL")   # optional override
+REG_HIT_TTL  = 6 * 3600    # seconds a found registration/type is cached
+REG_MISS_TTL = 10 * 60     # seconds a "not found" result is cached
+REG_CACHE_MAX = 20000
 
-_reg_conn = None
 _reg_lock = threading.Lock()
-_reg_cache = {}
-_schema = {"table": None, "icao_col": None, "reg_col": None, "source": None}
+_meta_cache = {}   # HEX -> (expires_ts, reg, type)
+_schema = {"table": None, "icao_col": None, "reg_col": None, "type_col": None, "source": None}
+_reg_state = {"next_detect": 0.0, "next_check": 0.0, "last_msg": {}}
+
+
+def _reg_log(msg, key="regdb"):
+    """Print a message only when it differs from the previous one with the same key (no log spam)."""
+    if _reg_state["last_msg"].get(key) != msg:
+        _reg_state["last_msg"][key] = msg
+        print(msg, flush=True)
+
+
+def _reg_reset_schema():
+    _schema.update({"table": None, "icao_col": None, "reg_col": None, "type_col": None, "source": None})
+    _reg_state["next_detect"] = 0.0
+
+
+class _ReadOnlyDb:
+    """A SQLite file opened read-only. The file is checked at most every 30 s: a missing file is
+    never created, a replaced file is reopened, and a changed file sets `changed` (cache reset)."""
+
+    def __init__(self, name, path):
+        self.name, self.path = name, path
+        self.conn, self.ident, self.mtime = None, None, None
+        self.next_stat = 0.0
+        self.changed = False
+
+    def get(self):
+        if not self.path:
+            return None
+        now = time.time()
+        if now < self.next_stat:
+            return self.conn
+        self.next_stat = now + 30
+        try:
+            st = os.stat(self.path)
+        except OSError:
+            if self.conn is not None:
+                self._close()
+                self.changed = True
+            _reg_log(f"[regdb] {self.name} not found: {self.path}", self.name)
+            return None
+        ident = (st.st_dev, st.st_ino)
+        if self.conn is not None and ident == self.ident:
+            if st.st_mtime != self.mtime:
+                self.mtime = st.st_mtime
+                self.changed = True
+            return self.conn
+        self._close()
+        try:
+            uri = "file:" + pathname2url(os.path.abspath(self.path)) + "?mode=ro"
+            self.conn = sqlite3.connect(uri, uri=True, check_same_thread=False, timeout=2.0)
+            self.ident, self.mtime, self.changed = ident, st.st_mtime, True
+            _reg_log(f"[regdb] {self.name} opened read-only: {self.path}", self.name)
+        except Exception as e:
+            self.conn = None
+            _reg_log(f"[regdb] {self.name} cannot be opened ({self.path}): {e}", self.name)
+        return self.conn
+
+    def _close(self):
+        if self.conn is not None:
+            try:
+                self.conn.close()
+            except Exception:
+                pass
+        self.conn, self.ident, self.mtime = None, None, None
+
+
+_bs_db = _ReadOnlyDb("BaseStation.sqb", REG_DB_PATH)
+_ref_db = _ReadOnlyDb("aircraft_ref.db", REF_DB_PATH)
+
 
 def _reg_connect():
-    global _reg_conn
-    if _reg_conn is None:
-        try:
-            _reg_conn = sqlite3.connect(f"file:{REG_DB_PATH}?mode=ro", uri=True, check_same_thread=False)
-        except Exception:
-            _reg_conn = sqlite3.connect(REG_DB_PATH, check_same_thread=False)
-    return _reg_conn
+    """Open/check both databases; clear the cache if either changed. Returns the BaseStation connection."""
+    conn = _bs_db.get()
+    _ref_db.get()
+    if _bs_db.changed:
+        _reg_reset_schema()
+    if _bs_db.changed or _ref_db.changed:
+        _meta_cache.clear()
+        _bs_db.changed = _ref_db.changed = False
+    return conn
 
-def _detect_schema():
-    if _schema["table"] and _schema["icao_col"] and _schema["reg_col"]:
-        return _schema["table"], _schema["icao_col"], _schema["reg_col"]
-    if REG_TABLE and REG_ICAO_COL and REG_REG_COL:
-        _schema.update({"table": REG_TABLE, "icao_col": REG_ICAO_COL, "reg_col": REG_REG_COL, "source": "env"})
-        print(f"[regdb] Using env schema REG_TABLE={REG_TABLE}, REG_ICAO_COL={REG_ICAO_COL}, REG_REG_COL={REG_REG_COL}")
-        return REG_TABLE, REG_ICAO_COL, REG_REG_COL
-    cand_icao = ["ModeS","ModeSCode","Icao24","ICAO24","Icao","ICAO","Hex","HEX","Address","ADDR"]
-    cand_reg  = ["Registration","REGISTRATION","Reg","REG","Tail","TailNo","TailNumber","TailNum","RegistrationMark","RegMark"]
+
+def _ref_lookup(key):
+    """(reg, type) from aircraft_ref.db table ac, or (None, None)."""
+    conn = _ref_db.conn
+    if conn is None:
+        return None, None
     try:
-        conn = _reg_connect()
+        row = conn.execute("SELECT reg, type FROM ac WHERE icao = ?", (key,)).fetchone()
+    except sqlite3.Error as e:
+        _reg_log(f"[regdb] aircraft_ref.db lookup failed: {e}", "ref_err")
+        return None, None
+    if not row:
+        return None, None
+    return (str(row[0]).strip().upper() or None) if row[0] else None, \
+           (str(row[1]).strip().upper() or None) if row[1] else None
+
+
+def _detect_schema(conn):
+    """Find table + ICAO, registration and type columns. Retries at most once a minute."""
+    if _schema["table"] and _schema["icao_col"]:
+        return _schema["table"], _schema["icao_col"], _schema["reg_col"], _schema["type_col"]
+    if conn is None or time.time() < _reg_state["next_detect"]:
+        return None, None, None, None
+    if REG_TABLE and REG_ICAO_COL and (REG_REG_COL or REG_TYPE_COL):
+        _schema.update({"table": REG_TABLE, "icao_col": REG_ICAO_COL, "reg_col": REG_REG_COL,
+                        "type_col": REG_TYPE_COL, "source": "env"})
+        _reg_log(f"[regdb] using env schema {REG_TABLE}({REG_ICAO_COL}, {REG_REG_COL}, {REG_TYPE_COL})")
+        return REG_TABLE, REG_ICAO_COL, REG_REG_COL, REG_TYPE_COL
+    cand_icao = ["ModeS", "ModeSCode", "Icao24", "ICAO24", "Icao", "ICAO", "Hex", "HEX", "Address", "ADDR"]
+    cand_reg = ["Registration", "REGISTRATION", "Reg", "REG", "Tail", "TailNo", "TailNumber", "TailNum",
+                "RegistrationMark", "RegMark"]
+    cand_type = ["IcaoTypeCode", "ICAOTypeCode", "IcaoType", "ICAOType", "TypeCode", "AircraftType", "ACType", "Type"]
+    try:
         tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
-        print(f"[regdb] sqlite tables: {tables}")
-        tables_sorted = sorted(tables, key=lambda n: (0 if n.lower()=="aircraft" else 1, n.lower()))
-        for t in tables_sorted:
-            try:
-                cols = [r[1] for r in conn.execute(f"PRAGMA table_info('{t}')").fetchall()]
-                print(f"[regdb] table {t} columns: {cols}")
-                icao = None; reg = None
-                for c in cols:
-                    if c in cand_icao and not icao: icao = c
-                    if c in cand_reg  and not reg:  reg = c
-                if not icao:
-                    for c in cols:
-                        lc = c.lower()
-                        if lc in [x.lower() for x in cand_icao] or lc in ("modes","icao","hex","address"):
-                            icao = c; break
-                if not reg:
-                    for c in cols:
-                        lc = c.lower()
-                        if lc in [x.lower() for x in cand_reg] or "reg" in lc or "tail" in lc:
-                            reg = c; break
-                if icao and reg:
-                    _schema.update({"table": t, "icao_col": icao, "reg_col": reg, "source": "auto"})
-                    print(f"[regdb] detected schema: table={t}, icao_col={icao}, reg_col={reg}")
-                    return t, icao, reg
-            except Exception as e:
-                print(f"[regdb] inspect table {t} failed: {e}")
-                continue
-        print("[regdb] schema detection failed")
+        tables.sort(key=lambda n: (0 if n.lower() == "aircraft" else 1, n.lower()))
+        for t in tables:
+            cols = [r[1] for r in conn.execute(f"PRAGMA table_info(\"{t}\")").fetchall()]
+            lower = {c.lower(): c for c in cols}
+            icao = next((lower[c.lower()] for c in cand_icao if c.lower() in lower), None)
+            reg = next((lower[c.lower()] for c in cand_reg if c.lower() in lower), None)
+            if not reg:
+                reg = next((c for c in cols if "reg" in c.lower() or "tail" in c.lower()), None)
+            typ = next((lower[c.lower()] for c in cand_type if c.lower() in lower), None)
+            if icao and (reg or typ):
+                _schema.update({"table": t, "icao_col": icao, "reg_col": reg, "type_col": typ, "source": "auto"})
+                _reg_log(f"[regdb] detected schema: table={t}, icao={icao}, reg={reg}, type={typ}")
+                return t, icao, reg, typ
+        _reg_log(f"[regdb] no registration table found (tables: {tables})")
     except Exception as e:
-        print(f"[regdb] schema detection error: {e}")
-    return None, None, None
+        _reg_log(f"[regdb] schema detection error: {e}")
+    _reg_state["next_detect"] = time.time() + 60
+    return None, None, None, None
 
-def lookup_registration(icao24: str):
+
+def _meta_cache_put(key, reg, typ, ttl):
+    if len(_meta_cache) > REG_CACHE_MAX:
+        now = time.time()
+        for k in [k for k, v in _meta_cache.items() if v[0] <= now]:
+            del _meta_cache[k]
+        if len(_meta_cache) > REG_CACHE_MAX:
+            _meta_cache.clear()
+    _meta_cache[key] = (time.time() + ttl, reg, typ)
+
+
+def lookup_meta(icao24):
+    """Return (registration, type) for a hex code using BaseStation.sqb (cached)."""
     if not icao24:
-        return None
-    key = icao24.strip().upper()
+        return None, None
+    key = str(icao24).strip().upper()
     if len(key) != 6:
-        return None
-    if key in _reg_cache:
-        return _reg_cache[key]
-    reg = None
+        return None, None
+    now = time.time()
+    if now >= _reg_state["next_check"]:
+        # look at the database files every 30 s even when everything comes from the cache,
+        # so a daily update (file changed) clears the cache
+        _reg_state["next_check"] = now + 30
+        with _reg_lock:
+            _reg_connect()
+    hit = _meta_cache.get(key)
+    if hit and hit[0] > now:
+        return hit[1], hit[2]
+    reg = typ = None
+    ttl = REG_MISS_TTL
     try:
         with _reg_lock:
             conn = _reg_connect()
-            t, icao_col, reg_col = _detect_schema()
-            if not t or not icao_col or not reg_col:
-                raise Exception("registration table/columns not found")
-            sql = f"SELECT {reg_col} FROM {t} WHERE UPPER({icao_col}) = ? LIMIT 1"
-            cur = conn.execute(sql, (key,))
-            row = cur.fetchone()
-            reg = (row[0].strip() if row and row[0] else None)
-    except Exception as e:
-        print(f"[regdb] lookup failed for {key}: {e}")
-        reg = None
-    _reg_cache[key] = reg
-    return reg
-
-_meta_cache = {}
-
-def _detect_type_col_for_table(table_name: str):
-    """
-    Best-effort detection of the ICAO type column in the given table.
-    Prefers 'IcaoTypeCode', then similar variants.
-    """
-    try:
-        conn = _reg_connect()
-        cur = conn.execute(f"PRAGMA table_info('{table_name}')")
-        cols = [r[1] for r in cur.fetchall()]
-        preferred = ["IcaoTypeCode", "ICAOTypeCode", "icaoTypeCode", "IcaoType", "ICAOType", "TypeCode", "AircraftType", "ACType", "Type"]
-        lower = {c.lower(): c for c in cols}
-        for name in preferred:
-            if name.lower() in lower:
-                return lower[name.lower()]
-        return None
-    except Exception as e:
-        print(f"[regdb] type-col detect failed: {e}")
-        return None
-
-def lookup_meta(icao24: str):
-    """
-    Return (registration, type) for a hex code, using BaseStation.sqb.
-    Caches results in-memory.
-    """
-    if not icao24:
-        return None, None
-    key = icao24.strip().upper()
-    if len(key) != 6:
-        return None, None
-    if key in _meta_cache:
-        return _meta_cache[key]
-
-    reg = None
-    typ = None
-    try:
-        with _reg_lock:
-            conn = _reg_connect()
-            t, icao_col, reg_col = _detect_schema()
-            if not t or not icao_col:
-                raise Exception("registration table/columns not found")
-            type_col = _detect_type_col_for_table(t)
-            if reg_col and type_col:
-                sql = f"SELECT {reg_col}, {type_col} FROM {t} WHERE UPPER({icao_col}) = ? LIMIT 1"
-                row = conn.execute(sql, (key,)).fetchone()
+            t, icao_col, reg_col, type_col = _detect_schema(conn)
+            if conn is not None and t:
+                sel = ", ".join([f'"{reg_col}"' if reg_col else "NULL", f'"{type_col}"' if type_col else "NULL"])
+                sql = f'SELECT {sel} FROM "{t}" WHERE "{icao_col}" = ? LIMIT 1'
+                row = conn.execute(sql, (key,)).fetchone() or conn.execute(sql, (key.lower(),)).fetchone()
                 if row:
-                    reg = (row[0].strip() if row[0] else None)
-                    typ = (row[1].strip() if row[1] else None)
-            elif reg_col:
-                sql = f"SELECT {reg_col} FROM {t} WHERE UPPER({icao_col}) = ? LIMIT 1"
-                row = conn.execute(sql, (key,)).fetchone()
-                if row:
-                    reg = (row[0].strip() if row[0] else None)
-            else:
-                type_col = _detect_type_col_for_table(t)
-                if type_col:
-                    sql = f"SELECT {type_col} FROM {t} WHERE UPPER({icao_col}) = ? LIMIT 1"
-                    row = conn.execute(sql, (key,)).fetchone()
-                    if row:
-                        typ = (row[0].strip() if row[0] else None)
+                    reg = (str(row[0]).strip() or None) if row[0] else None
+                    typ = (str(row[1]).strip() or None) if row[1] else None
+            if reg is None or typ is None:
+                r_reg, r_typ = _ref_lookup(key)
+                reg = reg or r_reg
+                typ = typ or r_typ
+            if conn is None and _ref_db.conn is None:
+                ttl = 60   # neither database available right now: try again soon
+            elif reg or typ:
+                ttl = REG_HIT_TTL
     except Exception as e:
-        print(f"[regdb] meta lookup failed for {key}: {e}")
-
-    _meta_cache[key] = (reg, typ)
+        _reg_log(f"[regdb] lookup failed: {e}", "lookup_err")
+        ttl = 60
+    _meta_cache_put(key, reg, typ, ttl)
     return reg, typ
 
-@app.route("/api/debug/type")
-def api_debug_type():
-    hexcode = (request.args.get('hex') or request.args.get('icao24') or "").strip().upper()
-    exists = os.path.exists(REG_DB_PATH)
-    t, icao_col, reg_col = _detect_schema()
-    type_col = _detect_type_col_for_table(t) if t else None
-    reg, typ = (None, None)
-    err = None
+
+def lookup_registration(icao24):
+    return lookup_meta(icao24)[0]
+
+
+def _enrich(objs):
+    """Fill missing reg/type from BaseStation.sqb (feed values always win)."""
     try:
-        reg, typ = lookup_meta(hexcode)
+        for obj in objs:
+            hexcode = str(obj.get("hex") or obj.get("icao24") or "").strip().upper()
+            if hexcode and len(hexcode) == 6:
+                reg, typ = lookup_meta(hexcode)
+                if reg and not obj.get("reg"):
+                    obj["reg"] = reg
+                if typ and not obj.get("type"):
+                    obj["type"] = typ
     except Exception as e:
-        err = str(e)
+        print(f"[enrich] failed: {e}", flush=True)
+    return objs
+
+
+# Debug pages are off unless DEBUG_API=1 is set in the environment.
+@app.before_request
+def _guard_debug_api():
+    if request.path.startswith("/api/debug/") and not config.DEBUG_API:
+        abort(404)
+
+
+@app.route("/api/debug/reg")
+@app.route("/api/debug/type")
+def api_debug_reg():
+    hexcode = (request.args.get('hex') or request.args.get('icao24') or "").strip().upper()
+    with _reg_lock:
+        conn = _reg_connect()
+        t, icao_col, reg_col, type_col = _detect_schema(conn)
+    reg, typ = lookup_meta(hexcode) if hexcode else (None, None)
     return jsonify({
-        "ok": True,
-        "hex": hexcode,
-        "db_path": REG_DB_PATH,
-        "exists": exists,
-        "table": t,
-        "icao_col": icao_col,
-        "reg_col": reg_col,
-        "type_col": type_col,
-        "registration": reg,
-        "type": typ,
-        "error": err
-    }), 200
+        "version": APP_VERSION, "hex": hexcode, "reg": reg, "type": typ,
+        "db_path": REG_DB_PATH, "db_exists": os.path.exists(REG_DB_PATH), "db_open": conn is not None,
+        "ref_db_path": REF_DB_PATH, "ref_db_open": _ref_db.conn is not None,
+        "table": t, "icao_col": icao_col, "reg_col": reg_col, "type_col": type_col,
+        "schema_source": _schema.get("source"), "cache_entries": len(_meta_cache),
+    })
 
 
 @app.route("/api/debug/schema")
 def api_debug_schema():
     try:
-        conn = _reg_connect()
-        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
-        info = {}
-        for t in tables:
-            cols = [r[1] for r in conn.execute(f"PRAGMA table_info('{t}')").fetchall()]
-            info[t] = cols
-        t, icao_col, reg_col = _detect_schema()
-        return jsonify({"db_path": REG_DB_PATH, "tables": info, "detected": {"table": t, "icao_col": icao_col, "reg_col": reg_col, "source": _schema.get("source")}})
+        with _reg_lock:
+            conn = _reg_connect()
+            if conn is None:
+                return jsonify({"db_path": REG_DB_PATH, "error": "database not available"}), 500
+            tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+            info = {t: [r[1] for r in conn.execute(f"PRAGMA table_info(\"{t}\")").fetchall()] for t in tables}
+            t, icao_col, reg_col, type_col = _detect_schema(conn)
+        return jsonify({"db_path": REG_DB_PATH, "tables": info,
+                        "detected": {"table": t, "icao_col": icao_col, "reg_col": reg_col, "type_col": type_col,
+                                     "source": _schema.get("source")}})
     except Exception as e:
         return jsonify({"db_path": REG_DB_PATH, "error": str(e)}), 500
-
-@app.route("/api/debug/reg")
-def api_debug_reg():
-    hexcode = (request.args.get('hex') or request.args.get('icao24') or "").strip().upper()
-    exists = os.path.exists(REG_DB_PATH)
-    t, icao_col, reg_col = _detect_schema()
-    reg = None
-    err = None
-    try:
-        reg = lookup_registration(hexcode) if hexcode else None
-    except Exception as e:
-        err = str(e)
-    return jsonify({
-        "version": APP_VERSION,
-        "hex": hexcode,
-        "reg": reg,
-        "db_path": REG_DB_PATH,
-        "db_exists": exists,
-        "table": t,
-        "icao_col": icao_col,
-        "reg_col": reg_col,
-        "schema_source": _schema.get("source"),
-        "error": err
-    })
 # --- /Registration lookup ---
 
 def _parse_colon_feed(text):
@@ -337,6 +409,8 @@ def fetch_data():
                     raw = b"".join(chunks)
             except Exception as e:
                 new_err = f"TCP read failed: {e}"
+            if not raw and new_err is None:
+                new_err = "Feed returned no data"
 
             if raw and new_err is None:
                 try:
@@ -442,18 +516,7 @@ def fetch_data():
 
                         filtered = [x for x in mapped if _within_range(x)]
 
-                        # Enrich reg + type from BaseStation.sqb (fallback only)
-                        try:
-                            for obj in filtered:
-                                hexcode = (str(obj.get("hex") or obj.get("icao24") or "")).strip().upper()
-                                if hexcode and len(hexcode) == 6:
-                                    reg, typ = lookup_meta(hexcode)
-                                    if reg and ("reg" not in obj or not obj.get("reg")):
-                                        obj["reg"] = reg
-                                    if typ and ("type" not in obj or not obj.get("type")):
-                                        obj["type"] = typ
-                        except Exception as _e:
-                            print(f"[enrich] failed: {_e}")
+                        _enrich(filtered)
 
                         new_data = {"now": time.time(), "aircraft": filtered}
                         new_err = None
@@ -463,17 +526,7 @@ def fetch_data():
                         ac = data.get("aircraft", data.get("planes", data.get("ac", [])))
                         if isinstance(ac, list):
                             filtered = [x for x in ac if _within_range(x)]
-                            try:
-                                for obj in filtered:
-                                    hexcode = (str(obj.get("hex") or obj.get("icao24") or "")).strip().upper()
-                                    if hexcode and len(hexcode) == 6:
-                                        reg, typ = lookup_meta(hexcode)
-                                        if reg and ("reg" not in obj or not obj.get("reg")):
-                                            obj["reg"] = reg
-                                        if typ and ("type" not in obj or not obj.get("type")):
-                                            obj["type"] = typ
-                            except Exception as _e:
-                                print(f"[enrich] failed: {_e}")
+                            _enrich(filtered)
                             new_data = {"now": data.get("now", time.time()), "aircraft": filtered}
                             new_err = None
                         else:
@@ -482,17 +535,7 @@ def fetch_data():
                         # Treat as colon feed using legacy parser
                         ac = _parse_colon_feed(data if isinstance(data, str) else "")
                         filtered = [x for x in ac if _within_range(x)]
-                        try:
-                            for obj in filtered:
-                                hexcode = (str(obj.get("hex") or obj.get("icao24") or "")).strip().upper()
-                                if hexcode and len(hexcode) == 6:
-                                    reg, typ = lookup_meta(hexcode)
-                                    if reg and ("reg" not in obj or not obj.get("reg")):
-                                        obj["reg"] = reg
-                                    if typ and ("type" not in obj or not obj.get("type")):
-                                        obj["type"] = typ
-                        except Exception as _e:
-                            print(f"[enrich] failed: {_e}")
+                        _enrich(filtered)
                         new_data = {"now": time.time(), "aircraft": filtered}
                         new_err = None
 
@@ -501,6 +544,7 @@ def fetch_data():
             if new_data is not None:
                 _cache["data"] = new_data
                 _cache["err"] = new_err
+                _cache["ok_ts"] = time.time()
             else:
                 if new_err:
                     _cache["err"] = new_err
@@ -508,6 +552,11 @@ def fetch_data():
         except Exception as e:
             _cache["err"] = str(e)
 
+        if _cache["err"] and _cache["err"] != _cache.get("_logged_err"):
+            print(f"[feed] {_cache['err']}", flush=True)
+        if not _cache["err"] and _cache.get("_logged_err"):
+            print("[feed] recovered", flush=True)
+        _cache["_logged_err"] = _cache["err"]
         _cache["ts"] = time.time()
         time.sleep(max(1, config.POLL_SECONDS))
 
@@ -625,23 +674,30 @@ _load_navaids()
 
 @app.route("/api/navaids")
 def api_navaids():
-    raw = request.args.get('raw') == '1'
-    nmr = float(request.args.get('nmr', '500'))
+    """Airports / navaids / waypoints within nmr NM of clat,clon (default: radar center).
+    raw=1 returns everything (large: the airport file covers the whole world)."""
+    if request.args.get('raw') == '1':
+        return jsonify({k: _navaids_cache.get(k, []) for k in ["airports", "navaids", "fixes"]})
+    try:
+        nmr = max(1.0, min(2000.0, float(request.args.get('nmr', '100'))))
+    except Exception:
+        nmr = 100.0
     try:
         clat = float(request.args.get('clat')) if request.args.get('clat') is not None else config.CENTER_LAT
         clon = float(request.args.get('clon')) if request.args.get('clon') is not None else config.CENTER_LON
     except Exception:
         clat, clon = config.CENTER_LAT, config.CENTER_LON
-    def within(lat, lon):
-        try:
-            lat = float(lat); lon = float(lon)
-            return _nm_distance(clat, clon, lat, lon) <= nmr
-        except Exception:
+    # Cheap bounding-box test first, exact distance only for the few rows inside it
+    dlat = nmr / 60.0
+    dlon = nmr / (60.0 * max(0.01, cos(radians(clat))))
+    def within(r):
+        lat, lon = r.get('lat'), r.get('lon')
+        if lat is None or lon is None or abs(lat - clat) > dlat:
             return False
-    if raw:
-        return jsonify({k: _navaids_cache.get(k, []) for k in ["airports","navaids","fixes"]})
-    out = {k: [r for r in _navaids_cache.get(k, []) if within(r.get('lat'), r.get('lon'))] for k in ["airports","navaids","fixes"]}
-    return jsonify(out)
+        if dlon < 180 and abs(((lon - clon + 540.0) % 360.0) - 180.0) > dlon:
+            return False
+        return _nm_distance(clat, clon, lat, lon) <= nmr
+    return jsonify({k: [r for r in _navaids_cache.get(k, []) if within(r)] for k in ["airports", "navaids", "fixes"]})
 
 @app.route("/api/navaids_meta")
 def api_navaids_meta():
@@ -652,19 +708,87 @@ def index():
     return render_template("index.html",
                            center_lat=config.CENTER_LAT,
                            center_lon=config.CENTER_LON,
-                           version=APP_VERSION)
+                           version=APP_VERSION,
+                           asset_tag=ASSET_TAG)
 
 @app.route("/api/aircraft")
 def api_aircraft():
-    if _cache["data"] is None:
-        return jsonify({"now": time.time(), "aircraft": [], "error": _cache["err"]}), 200
-    out = dict(_cache["data"])
+    now = time.time()
+    feed_age = (now - _cache["ok_ts"]) if _cache["ok_ts"] else None
+    out = dict(_cache["data"]) if _cache["data"] is not None else {"now": now, "aircraft": []}
+    out["feed_age"] = round(feed_age, 1) if feed_age is not None else None
+    out["version"] = APP_VERSION
     if _cache["err"]:
         out["error"] = _cache["err"]
+    # Short outages keep the last picture; after FEED_STALE_SECONDS the old targets are dropped
+    # so a dead feed is visible instead of showing frozen aircraft.
+    if feed_age is None or feed_age > config.FEED_STALE_SECONDS:
+        out["aircraft"] = []
+        out["feed_lost"] = True
     return jsonify(out), 200
+
+
+# --- Auto QNH from the latest METAR (same NOAA source and parsing as MODE-S Wind) ---
+# Fetched only when a browser with "Auto" QNH asks for it, at most every 10 minutes
+# (2 minutes after a failure), and shared by all viewers.
+METAR_REFRESH_SEC = 600
+METAR_RETRY_SEC = 120
+_metar = {"station": config.METAR_STATION, "metar": None, "qnh": None, "obs_time": None,
+          "ok_ts": 0.0, "next_fetch": 0.0, "error": None}
+_metar_lock = threading.Lock()
+
+
+def _parse_qnh(metar_text):
+    """QNH in hPa from a METAR: Q-group (Q1013) or A-group in inHg (A2992). None if missing."""
+    m = re.search(r"\bQ(\d{3,4})\b", metar_text)
+    if m:
+        v = float(m.group(1))
+    else:
+        m = re.search(r"\bA(\d{4})\b", metar_text)
+        if not m:
+            return None
+        v = round(float(m.group(1)) / 100.0 * 33.8639, 1)
+    return v if 900 <= v <= 1100 else None
+
+
+def _fetch_metar():
+    url = config.METAR_URL.format(icao=_metar["station"])
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": f"adsb_radar/{APP_VERSION}"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            raw = resp.read().decode("utf-8", errors="replace").strip()
+        lines = raw.splitlines()
+        text = "\n".join(lines[1:]).strip() if len(lines) > 1 else raw   # line 1 = date/time
+        qnh = _parse_qnh(text)
+        if qnh is None:
+            raise ValueError("no QNH in METAR")
+        t = re.search(r"\b(\d{6})Z\b", text)
+        _metar.update({"metar": text, "qnh": qnh, "obs_time": (t.group(1) + "Z") if t else None,
+                       "ok_ts": time.time(), "error": None})
+        _metar["next_fetch"] = time.time() + METAR_REFRESH_SEC
+        if _metar.get("_logged_err"):
+            print(f"[metar] {_metar['station']} OK again: Q{qnh:.0f}", flush=True)
+        _metar["_logged_err"] = None
+    except Exception as e:
+        _metar["error"] = str(e)
+        _metar["next_fetch"] = time.time() + METAR_RETRY_SEC
+        if _metar.get("_logged_err") != str(e):
+            print(f"[metar] {_metar['station']} fetch failed: {e}", flush=True)
+        _metar["_logged_err"] = str(e)
+
+
+@app.route("/api/qnh")
+def api_qnh():
+    with _metar_lock:
+        if time.time() >= _metar["next_fetch"]:
+            _fetch_metar()
+        age = (time.time() - _metar["ok_ts"]) if _metar["ok_ts"] else None
+        return jsonify({"station": _metar["station"], "qnh": _metar["qnh"], "obs_time": _metar["obs_time"],
+                        "metar": _metar["metar"], "age_sec": round(age) if age is not None else None,
+                        "error": _metar["error"]})
 
 
 # Register overlays endpoints
 register_overlays(app, config.CENTER_LAT, config.CENTER_LON, os.path.join(BASE_DIR, 'data', 'overlays'), exclude_names={'efhk_coast_demo','efhk_ils_demo','Navaids','efhk_nav'})
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=config.PORT, debug=False)
+    app.run(host=config.HOST, port=config.PORT, debug=False)

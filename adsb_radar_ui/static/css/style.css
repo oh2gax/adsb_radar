@@ -196,3 +196,7 @@ body.theme-full-el .sq.emg { color: inherit; font-weight: inherit; }
 #trafficList a:hover, #trafficList a:active { text-decoration: none; }
 
 .copybtn:visited { color: inherit; }
+
+/* Status line warning (feed lost / server unreachable); mono EL themes keep their single color */
+#status.warn { color: #ff2d2d !important; font-weight: 700; }
+body.theme-full-el #status.warn, body.theme-full-el-yellow #status.warn { color: inherit !important; }

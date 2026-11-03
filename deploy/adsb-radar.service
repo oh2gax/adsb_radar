@@ -1,0 +1,17 @@
+# Reference copy of /etc/systemd/system/adsb-radar.service on the AWS server.
+# Registration databases are found automatically in /home/ubuntu/mode_s_wind/data
+# (BaseStation.sqb + aircraft_ref.db); set REG_DB_PATH / REF_DB_PATH only to override.
+[Unit]
+Description=adsb_radar
+After=network-online.target modes-wind.service
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/adsb_radar/adsb_radar_ui
+Environment=PORT=5300
+ExecStart=/home/ubuntu/adsb_radar/adsb_radar_ui/venv/bin/python app_beta.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

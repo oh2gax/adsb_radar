@@ -1,6 +1,6 @@
 from flask import jsonify, request
 import os, json as _json
-from math import radians, sin, cos, atan2
+from math import radians, cos
 
 def register_overlays(app, CENTER_LAT, CENTER_LON, OVERLAY_DIR, exclude_names=None):
     exclude_names = set(exclude_names or [])
@@ -53,15 +53,11 @@ def register_overlays(app, CENTER_LAT, CENTER_LON, OVERLAY_DIR, exclude_names=No
                         _ov_handle_geom_into(feat.get('geometry') or {}, segs)
                 else:
                     _ov_handle_geom_into(gj, segs)
-                _overlays_cache[base_noext] = {'segments': segs, 'count': len(segs)}
+                # bounding box per line: (min_lat, max_lat, min_lon, max_lon)
+                boxes = [(min(p[0] for p in sg), max(p[0] for p in sg), min(p[1] for p in sg), max(p[1] for p in sg)) for sg in segs]
+                _overlays_cache[base_noext] = {'segments': segs, 'bbox': boxes, 'count': len(segs)}
             except Exception as e:
                 print('Overlay load fail', fn, e)
-
-    def _nm_distance(a,b,c,d):
-        dlat = radians(c - a)
-        dlon = radians(d - b)
-        x = sin(dlat/2)**2 + cos(radians(a)) * cos(radians(c)) * sin(dlon/2)**2
-        return (6371.0 * 2 * atan2(x**0.5, (1-x)**0.5)) * 0.5399568  # km->nm
 
     @app.route('/api/overlays_meta')
     def overlays_meta():
@@ -85,15 +81,18 @@ def register_overlays(app, CENTER_LAT, CENTER_LON, OVERLAY_DIR, exclude_names=No
             dec = int(request.args.get('decimate') or 2)
             if dec < 1:
                 dec = 1
+            # Keep every line whose bounding box touches the area around the view
+            # (2x range covers wide screens, where targets are drawn beyond the range ring).
+            dlat = rng * 2 / 60.0
+            dlon = rng * 2 / (60.0 * max(0.01, cos(radians(clat))))
+            v_lat1, v_lat2, v_lon1, v_lon2 = clat - dlat, clat + dlat, clon - dlon, clon + dlon
             out = {}
             for nm in names:
+                layer = _overlays_cache[nm]
                 segs_out = []
-                for seg in _overlays_cache[nm]['segments']:
-                    try:
-                        if _nm_distance(clat,clon, seg[0][0],seg[0][1]) > rng*2 and _nm_distance(clat,clon, seg[-1][0],seg[-1][1]) > rng*2:
-                            continue
-                    except Exception:
-                        pass
+                for seg, (la1, la2, lo1, lo2) in zip(layer['segments'], layer['bbox']):
+                    if la2 < v_lat1 or la1 > v_lat2 or lo2 < v_lon1 or lo1 > v_lon2:
+                        continue
                     s2 = seg[::dec] if dec > 1 else list(seg)
                     if s2 and (s2[-1] != seg[-1]):
                         s2.append(seg[-1])
@@ -101,4 +100,4 @@ def register_overlays(app, CENTER_LAT, CENTER_LON, OVERLAY_DIR, exclude_names=No
                 out[nm] = segs_out
             return jsonify({'ok': True, 'layers': out})
         except Exception as e:
-            return jsonify({'ok': False, 'error': str(e)}), 500
+            return jsonify({'ok': False, 'error': str(e)}), 500

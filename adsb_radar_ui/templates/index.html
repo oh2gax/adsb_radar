@@ -5,12 +5,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>ADS-B Radar UI</title>
-  <link rel="stylesheet" href="/static/css/style.css" />
+  <link rel="stylesheet" href="/static/css/style.css?v={{ asset_tag }}" />
 </head>
 <body>
   <div id="app">
     <aside class="side">
-      <div class="logo">RADAR v9.0.0<div class="copyright">© Otso Laakso / OH2GAX / New! Reg & Type fields added. MLAT used now for position calculations if needed.</div></div>
+      <div class="logo">RADAR {{ version }}<div class="copyright">© Otso Laakso / OH2GAX / New! Reg & Type fields added. MLAT used now for position calculations if needed.</div></div>
       <div class="block">
         <div class="label">Center</div>
         <div class="value" id="centerReadout">{{ '%.4f' % center_lat }}, {{ '%.4f' % center_lon }}</div>
@@ -147,6 +147,10 @@
         <div class="controls">
           <label>QNH (hPa): <input type="number" id="qnhInput" value="1013" step="1" min="950" max="1050" style="width:90px;"> <button class="btn micro" id="qnhUp">▲</button> <button class="btn micro" id="qnhDown">▼</button></label>
         </div>
+        <div class="controls" style="margin-top:6px;">
+          <label title="Use QNH from the latest METAR" style="white-space:nowrap;"><input type="checkbox" id="qnhAuto"> Auto</label>
+          <span class="value small" id="qnhInfo"></span>
+        </div>
       </div>
       <div class="block">
         <div class="label">ICAO24 filter (hex ranges)</div>
@@ -155,8 +159,6 @@
           <button id="applyFilter" class="btn wide">Apply</button>
         </div>
       </div>
-      <div class="block">
-        
       <div class="block">
         <div class="label">Overlays (lines)</div>
         <div class="controls ui-controls">
@@ -171,6 +173,7 @@
           </label>
         </div>
       </div>
+      <div class="block">
         <div class="label">Status</div>
         <div class="value small" id="status">Waiting for data...</div>
         <div class="value small" id="navMeta">Navaids: -- / -- / --</div>
@@ -191,6 +194,6 @@
   <script>
     window.RADAR_CENTER = {lat: {{ '%.6f' % center_lat }}, lon: {{ '%.6f' % center_lon }}};
   </script>
-  <script src="/static/js/radar.js"></script>
+  <script src="/static/js/radar.js?v={{ asset_tag }}"></script>
 </body>
 </html>

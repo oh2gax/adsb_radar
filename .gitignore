@@ -1,0 +1,14 @@
+# Local working files (copies from the server, notes, test data)
+tmp_files/
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Logs / state written by update.sh
+.update_state/
+
+# Registration database is never part of the repo
+*.sqb
