@@ -34,28 +34,29 @@ top-left logo; nothing has to be edited by hand.
 The app runs as the systemd service `adsb-radar` on 127.0.0.1:5300 behind nginx
 (`radar.oh2gax.org`), from `/home/ubuntu/adsb_radar`. See `deploy/adsb-radar.service`.
 
-### Automatic updates from GitHub — `update.sh`
+### Updating from GitHub — `update.sh`
+
+Nothing updates automatically. After pushing to GitHub, log in to the server and run:
 
 ```bash
 cd ~/adsb_radar
-bash update.sh                  # update now if GitHub has new commits
-bash update.sh --install-timer  # check GitHub every 2 minutes automatically (once)
-bash update.sh --status         # running version, timer state, recent update log
-bash update.sh --force          # reinstall packages + restart even if nothing is new
-bash update.sh --remove-timer   # stop automatic updates
+bash update.sh            # shows the new commits and asks: Update? [y/N]
+bash update.sh --check    # only show what is new, change nothing
+bash update.sh --status   # running version and service state
+bash update.sh --yes      # update without asking
+bash update.sh --force    # reinstall packages + restart even if nothing is new
 ```
 
 An update: `git fetch` → reset to `origin/main` → `pip install` if requirements.txt changed
 → Python syntax check → restart service → health check. If the new version does not start,
-it rolls back to the previous commit and skips that commit until a newer one is pushed.
-Hand edits made on the server are saved to `.update_state/*.patch` before being replaced —
-make changes in the repository instead. Update log: `journalctl -u adsb-radar-update`.
+it rolls back to the previous commit by itself. Hand edits made on the server are saved to
+`.update_state/*.patch` before being replaced — make changes in the repository instead.
 
 ### Development workflow
 
 1. Edit and test locally (`bash adsb_radar_ui/run_beta.sh`, or `python app_beta.py`)
 2. Commit and push to `main`
-3. Within 2 minutes the server updates itself; the logo shows the new version
+3. On the server: `cd ~/adsb_radar && bash update.sh`, answer `y`; the logo shows the new version
 
 ## Configuration (environment variables)
 

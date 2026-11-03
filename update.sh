@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
-# update.sh - update adsb_radar on the server from GitHub.
+# update.sh - update adsb_radar on the server from GitHub, after asking you first.
 #
 # Run on the AWS server as the "ubuntu" user, from /home/ubuntu/adsb_radar:
-#   bash update.sh                  update now if GitHub has new commits (quiet if nothing new)
-#   bash update.sh --force          reinstall packages and restart even if nothing is new
-#   bash update.sh --install-timer  check GitHub automatically every 2 minutes (systemd timer)
-#   bash update.sh --remove-timer   stop the automatic checks
-#   bash update.sh --status         show running version, timer state and recent update log
+#   bash update.sh            show what is new on GitHub and ask: Update? [y/N]
+#   bash update.sh --check    only show what is new, change nothing
+#   bash update.sh --yes      update without asking
+#   bash update.sh --force    reinstall packages and restart even if nothing is new (asks first)
+#   bash update.sh --status   show running version and service state
 #
-# What an update does: git fetch -> reset to origin/main -> pip install if requirements.txt
-# changed -> Python syntax check -> restart service -> health check. If the new version does
-# not start, it rolls back to the previous commit and skips that commit until a newer one arrives.
-# Local edits to tracked files are saved as a .patch in .update_state/ before they are discarded.
+# Nothing runs automatically: the server changes only when you run this script and answer y.
+# An update: git fetch -> reset to origin/main -> pip install if requirements.txt changed ->
+# Python syntax check -> restart service -> health check. If the new version does not start,
+# it rolls back to the previous commit by itself.
+# Local edits to tracked files are saved as a .patch in .update_state/ before they are replaced.
 set -uo pipefail
+export GIT_PAGER=cat PAGER=cat   # never stop in a pager (less) before the question
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$REPO_DIR/adsb_radar_ui"
@@ -21,7 +23,6 @@ SERVICE="${ADSB_SERVICE:-adsb-radar}"
 BRANCH="${ADSB_BRANCH:-main}"
 PORT="${ADSB_PORT:-5300}"
 STATE_DIR="$REPO_DIR/.update_state"
-TIMER_NAME="adsb-radar-update"
 
 log() { echo "[update] $*"; }
 
@@ -56,28 +57,56 @@ restart_service() {
 }
 
 do_update() {
-    local force="$1"
+    local force="$1" ask="$2" check_only="$3"
     mkdir -p "$STATE_DIR"
     exec 9>"$STATE_DIR/update.lock"
     if ! flock -n 9; then
         log "another update is already running"
-        return 0
+        return 1
     fi
     cd "$REPO_DIR" || return 1
 
     if ! git fetch --quiet origin "$BRANCH"; then
-        log "ERROR: git fetch failed (network or GitHub problem); will try again next time"
+        log "ERROR: git fetch failed (network or GitHub problem)"
         return 1
     fi
     local old new
     old="$(git rev-parse HEAD)"
     new="$(git rev-parse "origin/$BRANCH")"
 
-    if [ "$old" = "$new" ] && [ "$force" -eq 0 ]; then
-        return 0   # nothing new
+    echo "Running : $(running_version)  ($(git log -1 --format='%h %ci' "$old"))"
+    if [ "$old" = "$new" ]; then
+        echo "GitHub  : no new commits - already up to date"
+        [ "$force" -eq 1 ] || return 0
+    else
+        echo "GitHub  : $(git rev-list --count "$old..$new") new commit(s):"
+        git log --format='          %h %ci  %s' "$old..$new"
+        echo "Changes : $(git diff --shortstat "$old" "$new")"
+        git diff --quiet "$old" "$new" -- adsb_radar_ui/requirements.txt \
+            || echo "          (requirements.txt changed - Python packages will be installed)"
     fi
-    if [ "$force" -eq 0 ] && [ -f "$STATE_DIR/bad_commit" ] && [ "$(cat "$STATE_DIR/bad_commit")" = "$new" ]; then
-        return 0   # this commit already failed once; wait for a newer push
+    if [ -f "$STATE_DIR/bad_commit" ] && [ "$(cat "$STATE_DIR/bad_commit")" = "$new" ]; then
+        echo "NOTE    : commit ${new:0:7} already failed to start once and was rolled back"
+    fi
+    if ! git diff --quiet HEAD; then
+        echo "NOTE    : files were edited by hand on this server; they will be saved as a .patch and replaced:"
+        git diff --stat HEAD | sed 's/^/          /'
+    fi
+    [ "$check_only" -eq 1 ] && return 0
+
+    if [ "$ask" -eq 1 ]; then
+        if [ ! -t 0 ]; then
+            log "not asking without a terminal - run it yourself, or use --yes"
+            return 1
+        fi
+        local prompt="Update to ${new:0:7}?"
+        [ "$old" = "$new" ] && prompt="Reinstall packages and restart ${new:0:7}?"
+        local ans
+        read -r -p "$prompt [y/N] " ans
+        case "$ans" in
+            y|Y|yes|YES|Yes) ;;
+            *) echo "Cancelled - nothing changed."; return 0 ;;
+        esac
     fi
 
     log "updating ${old:0:7} -> ${new:0:7} ($(git log -1 --format='%s' "$new"))"
@@ -123,50 +152,11 @@ do_update() {
     if [ "$reqs_changed" -eq 1 ]; then install_requirements || true; fi
     restart_service || true
     if health_check; then
-        log "rollback OK - running $(running_version) (${old:0:7}); commit ${new:0:7} will be skipped until a newer push"
+        log "rollback OK - running $(running_version) (${old:0:7}) again; fix the problem and push a new commit"
     else
         log "ERROR: rollback did not come up either - check: journalctl -u $SERVICE -n 50"
     fi
     return 1
-}
-
-install_timer() {
-    local user
-    user="$(id -un)"
-    sudo -n tee "/etc/systemd/system/$TIMER_NAME.service" >/dev/null <<EOF
-[Unit]
-Description=adsb_radar update from GitHub
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-User=$user
-ExecStart=/bin/bash $REPO_DIR/update.sh
-EOF
-    sudo -n tee "/etc/systemd/system/$TIMER_NAME.timer" >/dev/null <<EOF
-[Unit]
-Description=Check GitHub for adsb_radar updates every 2 minutes
-
-[Timer]
-OnBootSec=1min
-OnCalendar=*:0/2
-AccuracySec=10s
-
-[Install]
-WantedBy=timers.target
-EOF
-    sudo -n systemctl daemon-reload
-    sudo -n systemctl enable --now "$TIMER_NAME.timer"
-    log "automatic updates enabled (every 2 minutes)"
-    systemctl list-timers "$TIMER_NAME.timer" --no-pager
-}
-
-remove_timer() {
-    sudo -n systemctl disable --now "$TIMER_NAME.timer" 2>/dev/null || true
-    sudo -n rm -f "/etc/systemd/system/$TIMER_NAME.timer" "/etc/systemd/system/$TIMER_NAME.service"
-    sudo -n systemctl daemon-reload
-    log "automatic updates removed"
 }
 
 show_status() {
@@ -174,21 +164,19 @@ show_status() {
     echo "Running version : $(running_version)"
     echo "Checked out     : $(git log -1 --format='%h %ci %s')"
     echo "Service         : $(systemctl is-active "$SERVICE")"
-    echo "Auto-update     : $(systemctl is-active "$TIMER_NAME.timer" 2>/dev/null)"
-    [ -f "$STATE_DIR/bad_commit" ] && echo "Skipped commit  : $(cut -c1-7 "$STATE_DIR/bad_commit") (failed to start)"
-    echo
-    journalctl -u "$TIMER_NAME.service" -n 15 --no-pager -o short-iso 2>/dev/null | grep '\[update\]' || true
+    [ -f "$STATE_DIR/bad_commit" ] && echo "Failed commit   : $(cut -c1-7 "$STATE_DIR/bad_commit") (rolled back)"
+    return 0
 }
 
 main() {
     case "${1:-}" in
-        "")              do_update 0 ;;
-        --force)         do_update 1 ;;
-        --install-timer) install_timer ;;
-        --remove-timer)  remove_timer ;;
-        --status)        show_status ;;
-        -h|--help)       sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//' ;;
-        *)               echo "unknown option: $1 (see: bash update.sh --help)"; return 2 ;;
+        "")          do_update 0 1 0 ;;
+        --yes|-y)    do_update 0 0 0 ;;
+        --force)     do_update 1 1 0 ;;
+        --check)     do_update 0 0 1 ;;
+        --status)    show_status ;;
+        -h|--help)   sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//' ;;
+        *)           echo "unknown option: $1 (see: bash update.sh --help)"; return 2 ;;
     esac
 }
 
