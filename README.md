@@ -100,5 +100,4 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 
 - `adsb_radar_ui/` – the application (Flask app, static files, data)
 - `deploy/` – reference systemd unit
-- `adsb_json_data/` – old Pi → server SSH stream (not needed when MODE-S Wind runs on the same server)
 - `tmp_files/` – local scratch folder, not in git
