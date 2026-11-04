@@ -40,7 +40,8 @@ health_check() {
 
 running_version() {
     curl -fsS -m 3 "http://127.0.0.1:$PORT/api/aircraft" 2>/dev/null \
-        | python3 -c 'import sys,json; print(json.load(sys.stdin).get("version","?"))' 2>/dev/null || echo "?"
+        | python3 -c 'import sys,json; print(json.load(sys.stdin).get("version") or "an older version without a version number")' 2>/dev/null \
+        || echo "not answering"
 }
 
 install_requirements() {
@@ -111,9 +112,10 @@ do_update() {
 
     log "updating ${old:0:7} -> ${new:0:7} ($(git log -1 --format='%s' "$new"))"
 
+    local patch=""
     if ! git diff --quiet HEAD; then
-        local patch="$STATE_DIR/local-changes-$(date +%Y%m%d-%H%M%S).patch"
-        git diff HEAD > "$patch"
+        patch="$STATE_DIR/local-changes-$(date +%Y%m%d-%H%M%S).patch"
+        git diff --binary HEAD > "$patch"
         log "local edits saved to $patch"
     fi
     git reset --hard --quiet "$new" || { log "ERROR: git reset failed"; return 1; }
@@ -149,6 +151,14 @@ do_update() {
     log "ERROR: $reason - rolling back to ${old:0:7}"
     echo "$new" > "$STATE_DIR/bad_commit"
     git reset --hard --quiet "$old"
+    # put the hand edits back too, so the server is exactly as it was before the update
+    if [ -n "$patch" ]; then
+        if git apply --whitespace=nowarn "$patch"; then
+            log "local edits restored from $patch"
+        else
+            log "WARNING: could not restore the local edits - they are in $patch"
+        fi
+    fi
     if [ "$reqs_changed" -eq 1 ]; then install_requirements || true; fi
     restart_service || true
     if health_check; then
