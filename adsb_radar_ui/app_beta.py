@@ -8,6 +8,7 @@ import gzip
 from overlays import register_overlays
 import config
 import ehs
+import tracks
 
 app = Flask(__name__, static_url_path="/static")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -544,7 +545,8 @@ def fetch_data():
             # Only update cache if we actually got new_data.
             # On transient errors we keep previous targets and just update error info.
             if new_data is not None:
-                _ehs.set_feed(new_data.get("aircraft") or [])
+                _ehs.set_feed(new_data.get("aircraft") or [])     # JSON-feed positions as references
+                _merge_live(new_data.get("aircraft") or [])      # then the fresher ADS-B positions
                 _cache["data"] = new_data
                 _cache["err"] = new_err
                 _cache["ok_ts"] = time.time()
@@ -563,9 +565,46 @@ def fetch_data():
         _cache["ts"] = time.time()
         time.sleep(max(1, config.POLL_SECONDS))
 
-# Comm-B / EHS values for the TopSky extended label (ehs.py)
-_ehs = ehs.EhsReceiver(config.BEAST_HOST, config.BEAST_PORT, config.MAG_DECLINATION)
+# Flight tracks (tracks.py) and the Beast reader (ehs.py): Comm-B values for the TopSky
+# extended label, and ADS-B positions for the scope and the history line
+_tracks = tracks.TrackStore(config.TRACKS_DB_PATH, config.TRACKS_HOURS)
+_tracks.start()
+_ehs = ehs.EhsReceiver(config.BEAST_HOST, config.BEAST_PORT, config.MAG_DECLINATION,
+                       center=(config.CENTER_LAT, config.CENTER_LON))
+_ehs.on_position = lambda icao, t, lat, lon, alt: _tracks.add(icao, t, lat, lon, alt, tracks.SRC_ADSB)
 _ehs.start()
+
+
+def _merge_live(objs):
+    """Fresh ADS-B positions / velocities from the Beast feed replace the JSON feed's (which are
+    up to 2 s old); aircraft without them (MLAT, no Beast feed) keep the JSON values and those
+    positions go to the track recorder."""
+    now = time.time()
+    for o in objs:
+        hx = str(o.get("hex") or "").upper()
+        if len(hx) != 6:
+            continue
+        p, v = _ehs.fresh(hx)
+        if p:
+            o["lat"], o["lon"] = round(p[1], 5), round(p[2], 5)
+            if p[3] is not None:
+                o["alt_baro"] = o["altitude"] = p[3]
+            o["pos_src"] = "adsb"
+        if v:
+            if v[1] is not None:
+                o["gs"] = o["speed"] = v[1]
+            if v[2] is not None:
+                o["track"] = round(v[2], 1)
+            if v[3] is not None:
+                o["baro_rate"] = v[3]
+        if not p and o.get("lat") is not None and o.get("lon") is not None:
+            try:
+                alt = o.get("alt_baro")
+                _tracks.add(hx, now, float(o["lat"]), float(o["lon"]),
+                            int(float(alt)) if alt is not None else None, tracks.SRC_FEED)
+            except (TypeError, ValueError):
+                pass
+    return objs
 
 threading.Thread(target=fetch_data, daemon=True).start()
 
@@ -1004,7 +1043,23 @@ def api_ac(icao):
 
 @app.route("/api/ehs_status")
 def api_ehs_status():
-    return jsonify(_ehs.status())
+    st = _ehs.status()
+    st["tracks"] = _tracks.status()
+    return jsonify(st)
+
+
+@app.route("/api/track/<icao>")
+def api_track(icao):
+    """Points of one flight for the history line: ?t=<epoch> picks the flight around that time
+    (EFHK traffic window), default the latest; ?since=<epoch> only newer points (live updates)."""
+    def num(k):
+        try:
+            return float(request.args.get(k)) if request.args.get(k) else None
+        except ValueError:
+            return None
+    if not re.fullmatch(r"[0-9A-Fa-f]{6}", icao or ""):
+        abort(400)
+    return _json_response(_tracks.flight(icao, at=num("t"), since=num("since")))
 
 
 # Register overlays endpoints

@@ -245,6 +245,7 @@ if(labelStyleSel) labelStyleSel.onchange = () => {
   labelStyle = labelStyleSel.value === 'topsky' ? 'topsky' : 'classic';
   localStorage.setItem('labelStyle', labelStyle);
   if(labelStyle !== 'topsky' && tsUi) tsUi.clear();
+  classicSel = null;
 };
 
 // --- TopSky labels (topsky.js) ---
@@ -266,8 +267,123 @@ window.radarHasAircraft = hex => {
 window.radarSelect = hex => {
   hex = String(hex || '').toUpperCase();
   flashHex = hex; flashUntil = Date.now() + 6000;
-  if(labelStyle === 'topsky' && tsUi) tsUi.select(hex);
+  if(labelStyle === 'topsky' && tsUi) tsUi.select(hex); else classicSel = hex;
+  requestDraw();
 };
+// --- Selected aircraft with Classic labels (TopSky keeps its own selection in topsky.js) ---
+let classicSel = null;
+let classicTargets = [];     // [[hex, x, y]] of the symbols drawn in the last frame (Classic)
+function selectedHex(){ return labelStyle === 'topsky' ? (tsUi ? tsUi.selected() : null) : classicSel; }
+function nearestTarget(list, x, y, maxPx){
+  let best = null, bd = maxPx;
+  for(const [k, tx, ty] of list){ const d = Math.hypot(tx - x, ty - y); if(d <= bd){ bd = d; best = k; } }
+  return best;
+}
+
+// --- History line: the whole current flight of the selected aircraft (server: /api/track, tracks.db),
+// or a past flight picked from the EFHK traffic window (with a tag at its end) ---
+const HIST_POLL_MS = 2000;
+const HIST_GAP_SEC = 120;        // no positions for longer than this: that part is drawn dashed
+let hist = null;                 // {hex, follow, live, tag, pts: [[t, lat, lon, alt], ...], seq}
+let histSeq = 0, histLastSel = null;
+async function histFetch(hex, q){
+  const r = await fetch(`/api/track/${encodeURIComponent(hex)}${q || ''}`, {cache: 'no-store'});
+  if(!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+function histClear(){ hist = null; histSeq++; requestDraw(); }
+async function histStartLive(hex){
+  const my = ++histSeq;
+  hist = {hex, follow: true, live: true, tag: '', pts: [], seq: my};
+  try{
+    const d = await histFetch(hex);
+    if(!hist || hist.seq !== my) return;
+    hist.pts = (d.points || []).map(p => [p[0], p[1], p[2], p[3]]);
+    requestDraw();
+  }catch(_){}
+}
+async function histPoll(){
+  const h = hist;
+  if(!h || !h.live || document.hidden) return;
+  const last = h.pts.length ? h.pts[h.pts.length - 1][0] : 0;
+  try{
+    const d = await histFetch(h.hex, last ? `?since=${last}` : '');
+    if(hist !== h) return;
+    for(const p of d.points || []) if(!h.pts.length || p[0] > h.pts[h.pts.length - 1][0]) h.pts.push([p[0], p[1], p[2], p[3]]);
+    requestDraw();
+  }catch(_){}
+}
+setInterval(histPoll, HIST_POLL_MS);
+// follow the selection: a newly selected aircraft gets its line, releasing the selection removes it
+function histSync(){
+  const s = selectedHex();
+  if(s === histLastSel) return;
+  histLastSel = s;
+  if(s){ if(!(hist && hist.hex === s && hist.live)) histStartLive(s); }
+  else if(hist && hist.follow) histClear();
+}
+// EFHK traffic window: the flight of `hex` around time t (epoch s). The current flight of an aircraft
+// on the scope is selected like a click on it; an earlier flight is shown alone, tagged.
+// Resolves to the number of points found (0: that flight was not recorded; -1: not recorded, but the
+// aircraft is on the scope now and was selected instead).
+window.radarShowTrack = async (hex, t, tag) => {
+  hex = String(hex || '').toUpperCase();
+  const my = ++histSeq;
+  let d;
+  try{ d = await histFetch(hex, Number.isFinite(t) ? `?t=${t}` : ''); }catch(_){ return 0; }
+  if(my !== histSeq) return (d.points || []).length;
+  const pts = (d.points || []).map(p => [p[0], p[1], p[2], p[3]]);
+  if(d.live && window.radarHasAircraft(hex)){
+    window.radarSelect(hex);
+    histLastSel = hex;
+    hist = {hex, follow: true, live: true, tag: '', pts, seq: my};
+  } else if(pts.length){
+    hist = {hex, follow: false, live: false, tag: tag || hex, pts, seq: my};
+  } else if(window.radarHasAircraft(hex)){
+    // that flight was not recorded, but the aircraft is on the scope now: point at it (its current line)
+    hist = null;
+    window.radarSelect(hex);
+    requestDraw();
+    return -1;
+  } else {
+    hist = null;
+  }
+  requestDraw();
+  return pts.length;
+};
+window.radarClearTrack = () => { if(tsUi) tsUi.select(null); classicSel = null; histClear(); };
+window.radarTrackShown = () => hist ? hist.hex : null;
+function drawHistory(cx, cy, R, obst){
+  const h = hist;
+  if(!h || !h.pts.length) return;
+  const k = R / rangeNm;
+  const xy = p => { const q = projectNm(p[1], p[2]); return [cx + q.x * k, cy - q.y * k]; };
+  const solid = new Path2D(), gaps = new Path2D();
+  let prev = null, prevT = 0;
+  for(const p of h.pts){
+    const [x, y] = xy(p);
+    if(prev){ const path = (p[0] - prevT > HIST_GAP_SEC) ? gaps : solid; path.moveTo(prev[0], prev[1]); path.lineTo(x, y); }
+    prev = [x, y]; prevT = p[0];
+  }
+  // a live line ends at the symbol (the symbol moves every second, the stored points less often)
+  const ac = h.live ? aircraft.get(h.hex) : null;
+  if(ac && prev && Number.isFinite(ac.lat) && Number.isFinite(ac.lon)){
+    const q = projectNm(ac.lat, ac.lon); solid.moveTo(prev[0], prev[1]); solid.lineTo(cx + q.x * k, cy - q.y * k);
+  }
+  ctx.save();
+  ctx.globalAlpha = 0.7; setStroke(colors.symbol); ctx.lineWidth = 1; ctx.lineJoin = 'round';
+  ctx.stroke(solid);
+  ctx.setLineDash([3, 4]); ctx.stroke(gaps); ctx.setLineDash([]);
+  if(!h.live){
+    // a past flight: a small square at its end and the tag (callsign, time, ARR/DEP, runway)
+    const [x, y] = prev;
+    ctx.globalAlpha = 1; ctx.lineWidth = 1.5; ctx.strokeRect(x - 3, y - 3, 6, 6);
+    setFill(colors.text); ctx.font = '12px ui-monospace, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    ctx.fillText(h.tag, x + 7, y - 4);
+    if(obst) obst.push({x: x + 5, y: y - 20, w: ctx.measureText(h.tag).width + 4, h: 18});
+  }
+  ctx.restore();
+}
 // --- Move the map by dragging it with the mouse (a click without moving still selects) ---
 let mapDrag = null;          // {x, y, lat, lon, moved} while the mouse button is down on the scope
 let mapJustDragged = false;  // swallow the click that ends a drag
@@ -316,7 +432,13 @@ canvas.addEventListener('wheel', e => {
   clearTimeout(wheelSaveTimer);
   wheelSaveTimer = setTimeout(() => { savePrefs(); setCenter(center.lat, center.lon, true); }, 300);
 }, { passive: false });
-canvas.addEventListener('mousemove', requestDraw);   // hover changes the TopSky labels
+canvas.addEventListener('mousemove', e => {          // hover changes the TopSky labels
+  requestDraw();
+  if(labelStyle !== 'topsky' && !(mapDrag && mapDrag.moved)){
+    const r = canvas.getBoundingClientRect();
+    canvas.style.cursor = nearestTarget(classicTargets, e.clientX - r.left, e.clientY - r.top, 12) ? 'pointer' : '';
+  }
+});
 
 // the home button (⌂) under the zoom buttons: back to the default centre (EFHK)
 const btnHome = document.getElementById('btnHome');
@@ -328,6 +450,28 @@ const tsUi = (typeof Topsky !== 'undefined') ? Topsky.interaction(canvas, {
   targets: () => tsTargetsLast,
   rects: () => tsRects,
 }) : null;
+// Clicks on the scope (after the TopSky handling above): with Classic labels a click on an aircraft
+// selects it and a second click releases it; a click on empty scope also removes a past flight's line.
+canvas.addEventListener('click', e => {
+  const r = canvas.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  let hit;
+  if(labelStyle === 'topsky'){
+    hit = nearestTarget(tsTargetsLast, x, y, 14);
+    if(!hit){ const R = tsRects[selectedHex()]; if(R && x >= R.x - 4 && x <= R.x + R.w + 4 && y >= R.y - 3 && y <= R.y + R.h + 2) hit = selectedHex(); }
+  } else {
+    hit = nearestTarget(classicTargets, x, y, 12);
+    classicSel = hit ? (hit === classicSel ? null : hit) : null;
+  }
+  if(!hit && hist && !hist.follow) histClear();
+  requestDraw();
+});
+document.addEventListener('keydown', e => {
+  if(e.key !== 'Escape' || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;
+  if(tsUi) tsUi.select(null);
+  classicSel = null;
+  histClear();
+});
 if(showAirportsCb) showAirportsCb.onchange = () => { showAirports = showAirportsCb.checked; savePrefs(); };
 if(showNavaidsCb) showNavaidsCb.onchange = () => { showNavaids = showNavaidsCb.checked; savePrefs(); };
 if(showFixesCb) showFixesCb.onchange = () => { showFixes = showFixesCb.checked; savePrefs(); };
@@ -600,6 +744,7 @@ async function fetchData(){
     aircraft = next;
     requestDraw(); _trafficBuildTs = 0;     // new data: redraw and rebuild the traffic list
     if(tsUi) tsUi.forget(new Set(next.keys()));
+    if(classicSel && !next.has(classicSel)) classicSel = null;
     const upd = new Date().toISOString().slice(11,19) + 'Z';
     if(j.feed_lost){
       const age = Number.isFinite(j.feed_age) ? `no data for ${Math.round(j.feed_age)} s` : 'no data yet';
@@ -1035,6 +1180,11 @@ function drawScope(){
   const ranges = icaoRanges;
   const posList = [];
   const now = Date.now();
+  const clTargets = [];
+
+  // the history line of the selected aircraft, under the symbols
+  histSync();
+  drawHistory(cx, cy, R, ts ? tsObst : null);
 
   // Draw aircraft with position
   for(const ac of aircraft.values()){
@@ -1129,6 +1279,8 @@ function drawScope(){
       continue;
     }
 
+    clTargets.push([ac.hex, px, py]);
+    if(ac.hex === classicSel){ setStroke(colors.symbol); ctx.lineWidth = 1; ctx.strokeRect(px-9, py-9, 18, 18); }
     const squawkStr = (showSquawk && ac.squawk) ? String(ac.squawk).trim() : '';
     const firstLine = label + (squawkStr? (' ' + squawkStr) : '');
 
@@ -1208,6 +1360,7 @@ if(isTypeOn() && ac.type){ infoParts.push(ac.type); } /*TYPE_AFTER_REG*/
     posList.push({d:rnm, label, alt: ac.alt ?? NaN, hex: ac.hex, squawk: ac.squawk, vr: ac.vr, reg: ac.reg, type: ac.type, sel_alt_ft: ac.sel_alt_ft, sel_alt_hundreds: ac.sel_alt_hundreds});
   }
 
+  classicTargets = clTargets;
   // the navaid names (on the static layer) as label obstacles
   if(ts) for(const o of staticNavObst) tsObst.push(o);
   drawOwnPosition(cx, cy, R, ts ? tsObst : null);

@@ -1,9 +1,10 @@
 /* traffic.js - the EFHK traffic window: landings and departures at EFHK from MODE-S Wind's
  * database (/api/efhk_traffic). Sidebar "EFHK traffic" → Show. In the window: ARR / DEP /
  * BOTH and 1h / 3h / 6h / 12h / 1d; newest first, a line at each change of the UTC day.
- * A row of an aircraft that is on the scope can be clicked: the aircraft blinks and, with
- * TopSky labels, is selected (its extended label opens). Choices, place and size are
- * remembered; the window asks for new rows every 60 s while it is open.
+ * Click a row: the track of that flight is drawn on the scope (from tracks.db, 24 h). An aircraft
+ * still on the scope also blinks and is selected (its history line follows it); an earlier flight
+ * gets a tag at its end. Click the row again (or Esc, or empty scope) to remove it. Choices, place
+ * and size are remembered; the window asks for new rows every 60 s while it is open.
  */
 (function () {
   const win = document.getElementById('trWindow');
@@ -48,7 +49,9 @@
       const day = dayKey(r.t);
       if (day !== prevDay) { html += `<tr class="tr-day"><td colspan="${cols}">── ${dayTxt(r.t)} ──</td></tr>`; prevDay = day; }
       const ga = r.ga ? (r.ga > 1 ? 'GA' + r.ga : 'GA') : '';
-      html += `<tr data-icao="${esc(r.icao)}" title="${esc(r.icao)}${r.ga ? ' · ' + r.ga + ' go-around' + (r.ga > 1 ? 's' : '') + ' before landing' : ''}">` +
+      const tag = [r.callsign || r.icao, hhmm(r.t), r.kind === 'arr' ? 'ARR' : 'DEP', r.rwy || '', ga].filter(Boolean).join(' ');
+      const key = r.icao + '|' + r.t;
+      html += `<tr data-icao="${esc(r.icao)}" data-t="${r.t}" data-tag="${esc(tag)}"${key === selKey ? ' class="sel"' : ''} title="${esc(r.icao)}${r.ga ? ' · ' + r.ga + ' go-around' + (r.ga > 1 ? 's' : '') + ' before landing' : ''}">` +
               `<td>${hhmm(r.t)}</td>` + (both ? `<td>${r.kind === 'arr' ? 'ARR' : 'DEP'}</td>` : '') +
               `<td class="tr-cs">${esc(r.callsign || r.icao)}</td><td>${esc(r.reg || '')}</td><td>${esc(r.type || '')}</td>` +
               `<td>${esc(r.rwy || '---')}</td><td class="tr-ga">${ga}</td></tr>`;
@@ -57,17 +60,34 @@
     markLive();
   }
 
-  // rows of aircraft on the scope now can be clicked
-  function markLive() {
+  // rows of aircraft on the scope now are marked; the row whose track is shown is highlighted
+  const HINT = / · click: (show on the scope|show the track)$/;
+  function markLive(check) {
+    const shown = typeof window.radarTrackShown === 'function' ? window.radarTrackShown() : null;
+    if (check && selKey && shown !== selKey.split('|')[0]) selKey = null;   // removed on the scope (Esc, click)
     body.querySelectorAll('tr[data-icao]').forEach(tr => {
       const live = hasAc(tr.dataset.icao);
       tr.classList.toggle('live', live);
-      tr.title = tr.title.replace(/ · click: show on the scope$/, '') + (live ? ' · click: show on the scope' : '');
+      tr.classList.toggle('sel', tr.dataset.icao + '|' + tr.dataset.t === selKey);
+      tr.title = tr.title.replace(HINT, '') + (live ? ' · click: show on the scope' : ' · click: show the track');
     });
   }
-  body.addEventListener('click', e => {
-    const tr = e.target.closest('tr.live');
-    if (tr && typeof window.radarSelect === 'function') window.radarSelect(tr.dataset.icao);
+  let selKey = null, noteTimer = null;
+  function note(txt) {
+    const old = count.dataset.keep ?? count.textContent;
+    count.dataset.keep = old; count.textContent = txt;
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => { count.textContent = count.dataset.keep; delete count.dataset.keep; }, 4000);
+  }
+  body.addEventListener('click', async e => {
+    const tr = e.target.closest('tr[data-icao]');
+    if (!tr || typeof window.radarShowTrack !== 'function') return;
+    const key = tr.dataset.icao + '|' + tr.dataset.t;
+    if (key === selKey) { selKey = null; window.radarClearTrack(); markLive(); return; }   // second click: off
+    selKey = key; markLive();
+    const n = await window.radarShowTrack(tr.dataset.icao, +tr.dataset.t, tr.dataset.tag);
+    if (selKey !== key) return;
+    if (!n) { selKey = null; markLive(); note('No track recorded for that flight (tracks are kept for 24 h).'); }
   });
 
   async function load() {
@@ -76,7 +96,7 @@
     try {
       const r = await fetch(`/api/efhk_traffic?kind=${kind}&hours=${hours}`, { cache: 'no-store' });
       const d = await r.json();
-      if (my === seq) render(d);
+      if (my === seq) { delete count.dataset.keep; render(d); }
     } catch (_) {
       if (my === seq) { count.textContent = ''; body.innerHTML = '<p class="wx-none">Radar server not reachable.</p>'; }
     }
@@ -95,7 +115,7 @@
     if (v) {
       aw.show(); load();
       timer = setInterval(() => { if (!document.hidden) load(); }, 60000);
-      liveTimer = setInterval(markLive, 5000);
+      liveTimer = setInterval(() => markLive(true), 2000);
     } else aw.hide();
   }
   cb.addEventListener('change', () => setOn(cb.checked));

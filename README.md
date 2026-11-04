@@ -18,7 +18,7 @@ top-left logo; nothing has to be edited by hand.
 
 ## Features
 
-- Polls a TCP JSON feed (connect, read one JSON list, close) every 3 s
+- Polls a TCP JSON feed (connect, read one JSON list, close) every second
 - Targets with callsign, squawk (7500/7600/7700 in red), altitude/FL with trend and
   selected altitude, ground speed, registration and type, speed vector and trail
 - Registration / type from BaseStation.sqb, completed from aircraft_ref.db (tar1090-db)
@@ -28,9 +28,11 @@ top-left logo; nothing has to be edited by hand.
 - **Own position**: a small triangle at a position entered in decimal degrees
 - **METAR & TAF** window for any airport (EFHK by default): movable, resizable, remembered
 - **EFHK traffic** window: landings and departures (ARR / DEP / BOTH, 1 h – 1 d) with runway and
-  go-arounds, read from MODE-S Wind's database; click a row to point at the aircraft
+  go-arounds, read from MODE-S Wind's database; click a row to draw that flight's track
+- **History line** of the selected aircraft: its whole current flight from the radar's own
+  track recorder (`tracks.db`, 24 h), high resolution in turns and go-arounds
 - Move the map by dragging it, zoom with the mouse wheel (2–400 NM); ⌂ returns to the default centre
-- Aircraft updated every second; map lines loaded once and drawn from a cached background layer
+- Aircraft updated every second (ADS-B positions decoded from the Beast feed every second); map lines loaded once and drawn from a cached background layer
 - Auto QNH from the latest METAR (default EFHK) for altitudes below 5000 ft
 - Label style **Classic** (the original labels) or **TopSky (ATC)**: three-line labels
   (callsign / level, trend and selected level / speed in tens of kt and type) with leader
@@ -88,6 +90,8 @@ it rolls back to the previous commit by itself. Hand edits made on the server ar
 | `METAR_URL` | NOAA tgftp `{icao}.TXT` | METAR source (same as MODE-S Wind) |
 | `TAF_URL` | NOAA tgftp `forecasts/taf/stations/{icao}.TXT` | TAF source (same as MODE-S Wind) |
 | `BEAST_HOST` / `BEAST_PORT` | 127.0.0.1 / 31005 | MODE-S Wind's Beast feed for the extended label; `0` = off |
+| `TRACKS_DB_PATH` | `adsb_radar_ui/data/tracks.db` | the radar's own track recorder (created automatically, not in git) |
+| `TRACKS_HOURS` | 24 | how long tracks are kept |
 | `MAG_DECLINATION` | 10.5 | used for the wind only if `pygeomag` (WMM2025) is missing |
 | `FEED_STALE_SECONDS` | 30 | feed silence before targets are cleared |
 | `MAX_RANGE_NM` | 0 | drop targets beyond this range (0 = off) |
@@ -103,8 +107,25 @@ Maintenance page; it listens on 127.0.0.1:31005 unless its config says otherwise
 decodes, with pyModeS like MODE-S Wind, only the replies of the aircraft on the radar:
 Comm-B BDS 5,0 / 6,0 / 4,0 and ADS-B types 29 / 31. The wind comes from a BDS 5,0 + 6,0
 pair (wings level), the temperature from TAS and Mach, both averaged over a minute —
-the same method as MODE-S Wind. Nothing is stored. Without the Beast feed the radar works
-as before and the extended label shows `---` for the Comm-B values.
+the same method as MODE-S Wind. Without the Beast feed the radar works as before and the
+extended label shows `---` for the Comm-B values.
+
+It also decodes the ADS-B airborne / surface positions (types 5–18, 20–22) and velocities
+(type 19) of those aircraft, locally against a known reference position, and checks each
+one against the JSON feed (within 20 NM) and the previous position (under 900 kt). A fresh
+ADS-B position (under 3 s old) replaces the JSON feed's position in `/api/aircraft`
+(`pos_src: "adsb"`), so ADS-B aircraft move every second although the JSON feed is
+refreshed every 2 s.
+
+## Track recorder (history line)
+
+`tracks.py` stores the positions of every aircraft in `tracks.db` (SQLite, WAL) for
+`TRACKS_HOURS`: the ADS-B positions above, and the JSON feed's positions of aircraft
+without ADS-B (MLAT). To keep the file small without losing shape, a point is kept when the
+direction changes by 1.5° or more, the altitude by 50 ft or more, or else every 5 s (once a
+minute when standing still) — about 85 bytes a point, 6–8 MB per 100 aircraft-hours, so a
+busy day around EFHK is some tens of MB. A flight ends after
+20 minutes without positions. The file is written every 3 s and cleaned every hour.
 
 ## Feed format
 
@@ -129,7 +150,8 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 | `/api/wx?icao=EFHK` | METAR and TAF of one airport (cached 10 min, shared by all viewers) |
 | `/api/whatsnew` | the ten newest versions of `doc/whats_new.md` |
 | `/api/ac/<hex>` | Comm-B / EHS values of one aircraft (TopSky extended label) |
-| `/api/ehs_status` | Beast feed reader: connected, messages, aircraft with Comm-B |
+| `/api/track/<hex>?t=&since=` | history line: the points `[t, lat, lon, alt, src]` of the flight around time `t` (default the latest), only newer than `since` |
+| `/api/ehs_status` | Beast feed reader: connected, messages, ADS-B positions, aircraft with Comm-B; `tracks`: recorder status |
 
 ## Folders
 

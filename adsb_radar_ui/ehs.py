@@ -24,8 +24,18 @@ declination (WMM2025 via pygeomag, else MAG_DECLINATION). The static air
 temperature comes from TAS and Mach (collector/atmos.py). The label shows the
 average of the last minute.
 
-Nothing is stored on disk. If the feed is not available the radar works as
-before; the extended label then shows only the values of the JSON feed.
+From 2026-11-04 the same stream also gives the aircraft positions: every ADS-B airborne /
+surface position (DF17/18 types 5-8, 9-18, 20-22) is decoded on its own against a nearby
+reference - the aircraft's last decoded position, else its position in the JSON feed, else the
+radar centre - so positions are available at once (no waiting for an even/odd pair) and the
+reference is always well within the 180 NM (surface 45 NM) the method needs. A position that
+implies more than 900 kt from the last one, or lies more than 20 NM from the aircraft's JSON-feed
+position, is rejected. Ground speed, track and vertical rate come from the velocity messages
+(type 19). The radar shows these instead of the 2-second JSON-feed positions when they are
+fresh, and every position goes to the track recorder (tracks.py) for the history line.
+
+Nothing is stored on disk here. If the feed is not available the radar works as before
+(JSON-feed positions); the extended label then shows only the values of the JSON feed.
 """
 
 import logging
@@ -50,6 +60,7 @@ FORGET_SEC = 300.0
 RECONNECT_SEC = 10.0
 
 _BEAST_LEN = {0x31: 2, 0x32: 7, 0x33: 14}   # Beast frame type -> payload bytes
+_cpr = None                                  # pyModeS.position._cpr (set when pyModeS loads)
 
 
 # ---- magnetic declination (WMM2025 via pygeomag, cached on a 0.5 deg grid) ----
@@ -94,6 +105,12 @@ class _Declination:
             return self.fixed
 
 
+def _nm(la1, lo1, la2, lo2):
+    dy = (la2 - la1) * 60.0
+    dx = (lo2 - lo1) * 60.0 * math.cos(math.radians((la1 + la2) / 2))
+    return math.hypot(dx, dy)
+
+
 def _isa_temp_c(alt_ft):
     m = alt_ft * 0.3048
     return (288.15 - 0.0065 * m if m <= 11000 else 216.65) - 273.15
@@ -125,8 +142,14 @@ def _wind(trk, gs, hdg_true, tas):
 
 
 class EhsReceiver:
-    def __init__(self, host, port, mag_declination=10.5):
+    def __init__(self, host, port, mag_declination=10.5, center=(60.3172, 24.9633)):
         self.host, self.port = host, int(port)
+        self.center = center
+        self.pos = {}           # HEX -> (t, lat, lon, alt or None, surface)
+        self.vel = {}           # HEX -> (t, gs, track, vertical rate)
+        self.on_position = None # callback(icao, t, lat, lon, alt) - the track recorder
+        self.n_pos = 0
+        self.n_pos_rejected = 0
         self.decl = _Declination(mag_declination)
         self.lock = threading.Lock()
         self.feed = {}          # HEX -> {"gs","trk","alt","lat","lon"} from the JSON feed
@@ -145,6 +168,13 @@ class EhsReceiver:
         except Exception as e:
             self.error = f"pyModeS not installed: {e}"
             print(f"[ehs] {self.error} - extended label without Comm-B values", flush=True)
+        if self.pms is not None:
+            try:                    # ADS-B positions only; the Comm-B values work without it
+                global _cpr
+                from pyModeS.position import _cpr as cpr_mod
+                _cpr = cpr_mod
+            except Exception as e:
+                print(f"[ehs] this pyModeS has no pyModeS.position._cpr ({e}) - no 1-second ADS-B positions", flush=True)
 
     # ---- called by the app ----
     def start(self):
@@ -172,6 +202,13 @@ class EhsReceiver:
             feed[hx] = {"gs": num("gs", "spd"), "trk": num("track", "trk"), "alt": num("alt_baro", "alt"),
                         "lat": num("lat"), "lon": num("lon")}
         self.feed = feed
+
+    def fresh(self, icao, max_age=3.0):
+        """(position, velocity) heard within max_age seconds, each None if not."""
+        now = time.time()
+        p, v = self.pos.get(icao), self.vel.get(icao)
+        return (p if p and now - p[0] <= max_age else None,
+                v if v and now - v[0] <= max_age + 2 else None)
 
     def get(self, icao):
         """Values for the extended label of one aircraft (same keys as MODE-S Wind's /api/live/ac)."""
@@ -215,8 +252,11 @@ class EhsReceiver:
     def status(self):
         with self.lock:
             n_ehs = sum(1 for s in self.ac.values() if s.get("b50") or s.get("b60"))
+        now = time.time()
         return {"enabled": self.pms is not None and bool(self.port), "connected": self.connected,
                 "host": self.host, "port": self.port, "messages": self.n_msgs, "used": self.n_used,
+                "positions": self.n_pos, "positions_rejected": self.n_pos_rejected,
+                "aircraft_with_adsb_position": sum(1 for p in list(self.pos.values()) if now - p[0] <= 10),
                 "aircraft_with_commb": n_ehs, "last_message_age": round(time.time() - self.last_msg, 1) if self.last_msg else None,
                 "error": self.error}
 
@@ -329,9 +369,20 @@ class EhsReceiver:
                         s["sel"] = (now, sel)
                 if bds in ("5,0", "6,0"):
                     self._pair(icao, s, f, now)
-        elif df == 17:
+        elif df in (17, 18):
             tc = self.util.typecode(msg)
-            if tc not in (29, 31):
+            if tc is None:
+                return
+            if 5 <= tc <= 18 or 20 <= tc <= 22:
+                self._position(msg, tc)
+                return
+            if tc == 19:
+                r = self.pms.decode(msg)
+                if r.get("crc_valid") is False or not r.get("icao") or r.get("groundspeed") is None:
+                    return
+                self.vel[r["icao"]] = (time.time(), r.get("groundspeed"), r.get("track"), r.get("vertical_rate"))
+                return
+            if tc not in (29, 31) or df != 17:
                 return
             icao = msg[2:8]
             if icao not in self.feed:
@@ -351,6 +402,51 @@ class EhsReceiver:
                         s["ap"] = (now, bool(r.get("autopilot")), bool(r.get("approach_mode")))
                     if r.get("selected_altitude"):
                         s["sel"] = (now, r["selected_altitude"])
+
+    def _position(self, msg, tc):
+        """One ADS-B position, decoded against a nearby reference (see the module notes)."""
+        r = self.pms.decode(msg)
+        if r.get("crc_valid") is False:
+            return
+        icao, fmt, clat, clon = r.get("icao"), r.get("cpr_format"), r.get("cpr_lat"), r.get("cpr_lon")
+        if not icao or fmt is None or clat is None or clon is None:
+            return
+        now = time.time()
+        surface = tc <= 8
+        prev = self.pos.get(icao)
+        f = self.feed.get(icao)
+        if prev and now - prev[0] < 60:
+            ref, ref_kind = (prev[1], prev[2]), "own"
+        elif f and f.get("lat") is not None and f.get("lon") is not None:
+            ref, ref_kind = (f["lat"], f["lon"]), "feed"
+        else:
+            ref, ref_kind = self.center, "centre"
+        try:
+            fn = _cpr.surface_position_with_ref if surface else _cpr.airborne_position_with_ref
+            lat, lon = fn(fmt, clat, clon, ref[0], ref[1])
+        except Exception:
+            return
+        d_ref = _nm(ref[0], ref[1], lat, lon)
+        if ref_kind == "centre" and d_ref > (40 if surface else 170):
+            self.n_pos_rejected += 1
+            return
+        if f and f.get("lat") is not None and _nm(f["lat"], f["lon"], lat, lon) > 20:
+            self.n_pos_rejected += 1      # far from where the JSON feed has it: not this aircraft
+            return
+        if prev and now - prev[0] < 30:
+            dt = max(0.5, now - prev[0])
+            if _nm(prev[1], prev[2], lat, lon) / dt * 3600 > 900:
+                self.n_pos_rejected += 1
+                return
+        alt = r.get("altitude") if 9 <= tc <= 18 else None
+        self.pos[icao] = (now, lat, lon, alt, surface)
+        self.n_pos += 1
+        cb = self.on_position
+        if cb is not None:
+            try:
+                cb(icao, now, lat, lon, alt if alt is not None else (f.get("alt") if f else None))
+            except Exception as e:
+                log.debug("track recorder: %s", e)
 
     def _pair(self, icao, s, f, now):
         """Wind and temperature from the latest BDS 5,0 + 6,0 (lock held)."""
@@ -385,3 +481,6 @@ class EhsReceiver:
         with self.lock:
             for k in [k for k, s in self.ac.items() if s.get("seen", 0) < cut]:
                 del self.ac[k]
+        for d in (self.pos, self.vel):
+            for k in [k for k, v in list(d.items()) if v[0] < cut]:
+                d.pop(k, None)

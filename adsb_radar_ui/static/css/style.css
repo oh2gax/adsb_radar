@@ -266,9 +266,10 @@ body.theme-full-el .wx-window .wx-old, body.theme-full-el-yellow .wx-window .wx-
   padding: 3px 10px 3px 0; border-bottom: 1px solid var(--radar-ring); }
 .tr-window .tr-table td { padding: 1px 10px 1px 0; white-space: nowrap; }
 .tr-window .tr-table td.tr-ga { font-weight: 700; }
-.tr-window .tr-table tr.live { cursor: pointer; }
+.tr-window .tr-table tr[data-icao] { cursor: pointer; }
+.tr-window .tr-table tr[data-icao]:hover td { text-decoration: underline; }
+.tr-window .tr-table tr.sel td { background: color-mix(in srgb, var(--radar-text) 20%, transparent); }
 .tr-window .tr-table tr.live td.tr-cs { text-decoration: underline dotted; }
-.tr-window .tr-table tr.live:hover td { text-decoration: underline; }
 .tr-window .tr-table tr.tr-day td { text-align: center; opacity: 0.75; padding: 5px 0 2px; }
 
 /* the ICAO box of METAR & TAF (a text input; the theme rules above style number inputs) */

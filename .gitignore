@@ -10,5 +10,8 @@ __pycache__/
 # Logs / state written by update.sh
 .update_state/
 
-# Registration database is never part of the repo
+# Databases are never part of the repo (registration databases, the track recorder's tracks.db)
 *.sqb
+*.db
+*.db-wal
+*.db-shm

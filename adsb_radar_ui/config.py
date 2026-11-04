@@ -39,6 +39,10 @@ METAR_URL = os.environ.get("METAR_URL", "https://tgftp.nws.noaa.gov/data/observa
 # BEAST_PORT=0 turns the reader off.
 BEAST_HOST = os.environ.get("BEAST_HOST", "127.0.0.1")
 BEAST_PORT = int(os.environ.get("BEAST_PORT", "31005"))
+# Flight tracks for the history line: adsb_radar's own database (created if missing, not in git)
+TRACKS_DB_PATH = os.environ.get("TRACKS_DB_PATH", os.path.join(_BASE_DIR, "data", "tracks.db"))
+TRACKS_HOURS = float(os.environ.get("TRACKS_HOURS", "24"))
+
 # Used for the wind when the pygeomag model is not installed (deg east, EFHK area)
 MAG_DECLINATION = float(os.environ.get("MAG_DECLINATION", "10.5"))
 
