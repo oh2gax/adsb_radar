@@ -72,6 +72,10 @@ class TrackStore:
                       "lon REAL NOT NULL, alt INTEGER, src INTEGER)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_points_icao_t ON points(icao, t)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_points_t ON points(t)")
+            # EFHK movements found by movements.py (arr / dep / ga), for the EFHK traffic window
+            c.execute("CREATE TABLE IF NOT EXISTS movements (t REAL NOT NULL, kind TEXT NOT NULL, icao TEXT NOT NULL, "
+                      "callsign TEXT, rwy TEXT, ga INTEGER, low INTEGER)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_movements_t ON movements(t)")
             c.commit()
             self.conn = c
             print(f"[tracks] recording to {path} (kept {retention_hours} h)", flush=True)
@@ -120,6 +124,31 @@ class TrackStore:
             self.pending.append((icao, t, round(lat, 6), round(lon, 6), int(alt) if alt is not None else None, src))
             self.n_kept += 1
 
+    # ---- EFHK movements (movements.py) ----
+    def add_event(self, ev):
+        """Store one movement at once (they are few: a few hundred a day)."""
+        row = (ev["t"], ev["kind"], ev["icao"], ev.get("callsign"), ev.get("rwy"), ev.get("ga") or 0,
+               1 if ev.get("low") else 0)
+        with self.lock:
+            self._events_mem = (getattr(self, "_events_mem", []) + [row])[-5000:]
+        if self.conn is None:
+            return
+        with self.dblock:
+            self.conn.execute("INSERT INTO movements VALUES (?,?,?,?,?,?,?)", row)
+            self.conn.commit()
+
+    def events(self, since, kinds=("arr", "dep", "ga")):
+        """Movements since `since`, newest first: dicts t, kind, icao, callsign, rwy, ga, low."""
+        if self.conn is not None:
+            with self.dblock:
+                rows = self.conn.execute("SELECT t, kind, icao, callsign, rwy, ga, low FROM movements "
+                                         "WHERE t >= ? ORDER BY t DESC", (since,)).fetchall()
+        else:
+            with self.lock:
+                rows = sorted((r for r in getattr(self, "_events_mem", []) if r[0] >= since), reverse=True)
+        keys = ("t", "kind", "icao", "callsign", "rwy", "ga", "low")
+        return [dict(zip(keys, r)) for r in rows if r[1] in kinds]
+
     def last_time(self, icao):
         s = self.state.get(icao)
         return s["t"] if s else None
@@ -147,6 +176,7 @@ class TrackStore:
                     if time.time() >= next_purge:
                         next_purge = time.time() + 3600
                         n = self.conn.execute("DELETE FROM points WHERE t < ?", (time.time() - self.retention,)).rowcount
+                        self.conn.execute("DELETE FROM movements WHERE t < ?", (time.time() - self.retention,))
                         self.conn.commit()
                         if n:
                             print(f"[tracks] purged {n} points older than {self.retention // 3600} h", flush=True)

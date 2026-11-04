@@ -9,6 +9,7 @@ from overlays import register_overlays
 import config
 import ehs
 import tracks
+import movements
 
 app = Flask(__name__, static_url_path="/static")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -547,6 +548,7 @@ def fetch_data():
             if new_data is not None:
                 _ehs.set_feed(new_data.get("aircraft") or [])     # JSON-feed positions as references
                 _merge_live(new_data.get("aircraft") or [])      # then the fresher ADS-B positions
+                _mark_movements(new_data.get("aircraft") or [])  # go-arounds / landings / departures
                 _cache["data"] = new_data
                 _cache["err"] = new_err
                 _cache["ok_ts"] = time.time()
@@ -573,6 +575,33 @@ _ehs = ehs.EhsReceiver(config.BEAST_HOST, config.BEAST_PORT, config.MAG_DECLINAT
                        center=(config.CENTER_LAT, config.CENTER_LON))
 _ehs.on_position = lambda icao, t, lat, lon, alt: _tracks.add(icao, t, lat, lon, alt, tracks.SRC_ADSB)
 _ehs.start()
+# EFHK go-arounds (the GA mark in the labels), landings and departures (EFHK traffic window)
+_moves = movements.MovementDetector(on_event=_tracks.add_event)
+
+
+def _mark_movements(objs):
+    _moves.update(objs)
+    for o in objs:
+        g = _moves.ga_info(str(o.get("hex") or "").upper())
+        if g:
+            o["ga"] = g
+
+
+def _qnh_keeper():
+    """The EFHK QNH for the movement detector (pressure altitude -> MSL), every 5 minutes."""
+    time.sleep(3)                       # started while the module is still loading
+    while True:
+        wait = 300
+        try:
+            e = wx_get("EFHK")
+            q = _parse_qnh(e["metar"]) if e["metar"] else None
+            _moves.set_qnh(q)
+            if q is None:
+                wait = 60
+        except Exception as e:
+            print(f"[movements] QNH: {e}", flush=True)
+            wait = 60
+        time.sleep(wait)
 
 
 def _merge_live(objs):
@@ -607,6 +636,7 @@ def _merge_live(objs):
     return objs
 
 threading.Thread(target=fetch_data, daemon=True).start()
+threading.Thread(target=_qnh_keeper, daemon=True).start()
 
 # --- OurAirports loader: headered or headerless ---
 _navaids_cache = {"airports": [], "navaids": [], "fixes": []}
@@ -925,8 +955,35 @@ def _dep_runway(lat, lon, track):
 
 
 def _efhk_traffic(kind, hours):
+    """(rows, note): MODE-S Wind's landings / departures, completed with the radar's own
+    (movements.py) where MODE-S Wind has none for that aircraft within 10 minutes."""
     since = time.time() - hours * 3600
-    rows = []
+    rows, note = [], None
+    try:
+        _msw_rows(kind, since, rows)
+    except Exception as e:
+        note = str(e) if isinstance(e, FileNotFoundError) else f"MODE-S Wind database: {e}"
+        _reg_log(f"[traffic] {note}", "traffic")
+        rows = []
+    kinds = ("arr", "dep") if kind == "both" else (kind,)
+    for ev in _tracks.events(since, kinds):
+        if any(r["kind"] == ev["kind"] and (r["icao"] or "").upper() == ev["icao"] and abs(r["t"] - ev["t"]) <= 600
+               for r in rows):
+            continue
+        rows.append({"t": ev["t"], "kind": ev["kind"], "icao": ev["icao"], "callsign": ev["callsign"], "reg": None,
+                     "type": None, "rwy": ev["rwy"], "ga": ev["ga"] or 0, "own": True})
+    for row in rows:
+        row["icao"] = (row["icao"] or "").upper()
+        row["callsign"] = (row["callsign"] or "").strip() or None
+        if not row["reg"] or not row["type"]:
+            reg, typ = lookup_meta(row["icao"])
+            row["reg"], row["type"] = row["reg"] or reg, row["type"] or typ
+        row["t"] = round(row["t"])
+    rows.sort(key=lambda x: x["t"], reverse=True)
+    return rows, note
+
+
+def _msw_rows(kind, since, rows):
     with _msw_lock:
         conn = _msw_db.get()
         _msw_db.changed = False
@@ -953,15 +1010,6 @@ def _efhk_traffic(kind, hours):
                     pass
                 rows.append({"t": t, "kind": "dep", "icao": r[2], "callsign": r[3], "reg": r[4], "type": r[5],
                              "rwy": rwy or _dep_runway(r[7], r[8], r[6]), "ga": 0})
-    for row in rows:
-        row["icao"] = (row["icao"] or "").upper()
-        row["callsign"] = (row["callsign"] or "").strip() or None
-        if not row["reg"] or not row["type"]:
-            reg, typ = lookup_meta(row["icao"])
-            row["reg"], row["type"] = row["reg"] or reg, row["type"] or typ
-        row["t"] = round(row["t"])
-    rows.sort(key=lambda x: x["t"], reverse=True)
-    return rows
 
 
 @app.route("/api/efhk_traffic")
@@ -979,12 +1027,12 @@ def api_efhk_traffic():
     if hit and now - hit[0] < TRAFFIC_CACHE_SEC:
         return jsonify(hit[1])
     try:
-        rows = _efhk_traffic(kind, hours)
+        rows, note = _efhk_traffic(kind, hours)
         out = {"kind": kind, "hours": hours, "now": round(now), "rows": rows,
                "arr": sum(1 for r in rows if r["kind"] == "arr"), "dep": sum(1 for r in rows if r["kind"] == "dep"),
-               "error": None}
+               "error": None if rows else note, "note": note}
     except Exception as e:
-        msg = str(e) if isinstance(e, FileNotFoundError) else f"MODE-S Wind database: {e}"
+        msg = f"EFHK traffic: {e}"
         _reg_log(f"[traffic] {msg}", "traffic")
         out = {"kind": kind, "hours": hours, "now": round(now), "rows": [], "arr": 0, "dep": 0, "error": msg}
     _traffic_cache[key] = (now, out)
@@ -1045,6 +1093,7 @@ def api_ac(icao):
 def api_ehs_status():
     st = _ehs.status()
     st["tracks"] = _tracks.status()
+    st["movements"] = _moves.status()
     return jsonify(st)
 
 

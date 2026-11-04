@@ -22,7 +22,7 @@ const Topsky = (() => {
   const trend = vr => !Number.isFinite(vr) ? ' ' : vr >= 300 ? '↑' : vr <= -300 ? '↓' : ' ';
   const EMG = new Set(['7500', '7600', '7700']);
 
-  // The normal label: callsign (+ emergency squawk) / level, trend and selected level
+  // The normal label: callsign (+ emergency squawk, + GA after a go-around) / level, trend and selected level
   // in hundreds of feet (019↑060) / ground speed in tens of knots and type (19 AT75).
   // ac: normalized aircraft (radar.js); cs: the label text; lvl3(alt): 3-digit level.
   function labelLines(ac, cs, lvl3) {
@@ -75,14 +75,15 @@ const Topsky = (() => {
   // placed, the symbols and the obstacles (vectors, trails), inside the canvas; it
   // keeps its last position (pos[key]) while that stays free, so labels do not jump.
   // Extended first, then the selected, then from the lowest up (approach traffic).
-  // items: { key, p:{x,y}, lines, sel, ext, alt, emg }
+  // items: { key, p:{x,y}, lines, sel, ext, alt, emg (emergency squawk), ga ('GA'), gaOn (shown now) }
   // P: { text, leader, extBg, emg, font, frozen (map moving: keep each label's place) }. Returns key -> label box.
   function drawLabels(g, items, W, H, obst, pos, P) {
     g.save();
     g.font = P.font;
     g.textBaseline = 'top'; g.textAlign = 'left';
     for (const it of items) {
-      const ws = it.lines.map((t, i) => g.measureText(t + (i === 0 && it.emg ? ' ' + it.emg : '')).width);
+      const tail = (it.emg ? ' ' + it.emg : '') + (it.ga ? ' ' + it.ga : '');   // alarms after the callsign
+      const ws = it.lines.map((t, i) => g.measureText(t + (i === 0 ? tail : '')).width);
       it.w = Math.ceil(Math.max(...ws)) + 4;
       it.h = it.lines.length * LH + 2;
     }
@@ -156,9 +157,16 @@ const Topsky = (() => {
       g.beginPath(); g.moveTo(it.p.x + R.ux * 7, it.p.y + R.uy * 7); g.lineTo(R.ax, R.ay); g.stroke();
       g.fillStyle = P.text;
       it.lines.forEach((t, i) => g.fillText(t, R.x + 2, R.y + 1 + i * LH));
-      if (it.emg) {                                      // emergency squawk after the callsign
+      // alarms after the callsign, in red: an emergency squawk, the go-around mark GA (flashing: gaOn)
+      let ax = R.x + 2 + g.measureText(it.lines[0] + ' ').width;
+      if (it.emg) {
         g.fillStyle = P.emg || P.text;
-        g.fillText(it.emg, R.x + 2 + g.measureText(it.lines[0] + ' ').width, R.y + 1);
+        g.fillText(it.emg, ax, R.y + 1);
+        ax += g.measureText(it.emg + ' ').width;
+      }
+      if (it.ga && it.gaOn) {
+        g.fillStyle = P.emg || P.text;
+        g.fillText(it.ga, ax, R.y + 1);
       }
     }
     g.restore();

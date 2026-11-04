@@ -1,5 +1,6 @@
 /* traffic.js - the EFHK traffic window: landings and departures at EFHK from MODE-S Wind's
- * database (/api/efhk_traffic). Sidebar "EFHK traffic" → Show. In the window: ARR / DEP /
+ * database (/api/efhk_traffic), completed with the radar's own detection (movements.py) where
+ * MODE-S Wind has no row. Sidebar "EFHK traffic" → Show. In the window: ARR / DEP /
  * BOTH and 1h / 3h / 6h / 12h / 1d; newest first, a line at each change of the UTC day.
  * Click a row: the track of that flight is drawn on the scope (from tracks.db, 24 h). An aircraft
  * still on the scope also blinks and is selected (its history line follows it); an earlier flight
@@ -37,6 +38,8 @@
     const span = hours === 24 ? '1 d' : hours + ' h';
     count.textContent = d.error ? '' : kind === 'both' ? `${d.arr} arr · ${d.dep} dep · last ${span}`
       : `${kind === 'arr' ? d.arr : d.dep} ${what} · last ${span}`;
+    count.title = d.note ? d.note + ' – only the radar\'s own detection is shown' : '';
+    if (d.note && !d.error) count.textContent += ' · radar only';
     if (d.error) { body.innerHTML = `<p class="wx-none">${esc(d.error)}</p>`; return; }
     const rows = d.rows || [];
     if (!rows.length) { body.innerHTML = `<p class="wx-none">No ${what} in the last ${span}.</p>`; return; }
@@ -51,7 +54,7 @@
       const ga = r.ga ? (r.ga > 1 ? 'GA' + r.ga : 'GA') : '';
       const tag = [r.callsign || r.icao, hhmm(r.t), r.kind === 'arr' ? 'ARR' : 'DEP', r.rwy || '', ga].filter(Boolean).join(' ');
       const key = r.icao + '|' + r.t;
-      html += `<tr data-icao="${esc(r.icao)}" data-t="${r.t}" data-tag="${esc(tag)}"${key === selKey ? ' class="sel"' : ''} title="${esc(r.icao)}${r.ga ? ' · ' + r.ga + ' go-around' + (r.ga > 1 ? 's' : '') + ' before landing' : ''}">` +
+      html += `<tr data-icao="${esc(r.icao)}" data-t="${r.t}" data-tag="${esc(tag)}"${key === selKey ? ' class="sel"' : ''} title="${esc(r.icao)}${r.ga ? ' · ' + r.ga + ' go-around' + (r.ga > 1 ? 's' : '') + ' before landing' : ''}${r.own ? ' · detected by the radar' : ''}">` +
               `<td>${hhmm(r.t)}</td>` + (both ? `<td>${r.kind === 'arr' ? 'ARR' : 'DEP'}</td>` : '') +
               `<td class="tr-cs">${esc(r.callsign || r.icao)}</td><td>${esc(r.reg || '')}</td><td>${esc(r.type || '')}</td>` +
               `<td>${esc(r.rwy || '---')}</td><td class="tr-ga">${ga}</td></tr>`;

@@ -812,7 +812,15 @@ function normalizeAircraft(a){
   const type = a.type ?? a.icao_type ?? a.icaoType ?? a.icao_type_code ?? a.IcaoTypeCode ?? null;
   const sel_alt_ft = (a.sel_alt_ft!==undefined && a.sel_alt_ft!==null && !Number.isNaN(Number(a.sel_alt_ft))) ? Number(a.sel_alt_ft) : null;
   const sel_alt_hundreds = (a.sel_alt_hundreds!==undefined && a.sel_alt_hundreds!==null && !Number.isNaN(Number(a.sel_alt_hundreds))) ? Number(a.sel_alt_hundreds) : null;
-  return {hex, callsign, lat, lon, alt, hdg, gs, vr, squawk, reg, type, sel_alt_ft, sel_alt_hundreds};
+  // go-around mark from the server (movements.py): the time it was detected, in this browser's clock
+  const gaStart = (a.ga && Number.isFinite(Number(a.ga.age))) ? Date.now() - Number(a.ga.age) * 1000 : null;
+  return {hex, callsign, lat, lon, alt, hdg, gs, vr, squawk, reg, type, sel_alt_ft, sel_alt_hundreds, gaStart};
+}
+// The GA mark after the callsign: flashing for the first 60 s, then steady (until the landing)
+const GA_FLASH_MS = 60000;
+function gaVisible(ac, now){
+  if(ac.gaStart == null) return false;
+  return (now - ac.gaStart) >= GA_FLASH_MS || Math.floor(now / 500) % 2 === 0;
 }
 
 // Drawing helpers
@@ -1272,7 +1280,8 @@ function drawScope(){
         : Topsky.labelLines(ac, label, tsLvl3);
       const sq = ac.squawk ? String(ac.squawk).trim() : '';
       tsItems.push({key: ac.hex, p: {x: px, y: py}, lines, sel: isSel, ext,
-                    alt: Number.isFinite(ac.alt) ? ac.alt : 99999, emg: (!ext && Topsky.EMG.has(sq)) ? sq : ''});
+                    alt: Number.isFinite(ac.alt) ? ac.alt : 99999, emg: Topsky.EMG.has(sq) ? sq : '',
+                    ga: ac.gaStart != null ? 'GA' : '', gaOn: gaVisible(ac, now)});
       tsTargets.push([ac.hex, px, py]);
       if(isSel){ setStroke(colors.symbol); ctx.lineWidth = 1; ctx.strokeRect(px-9, py-9, 18, 18); }
       posList.push({d:rnm, label, alt: ac.alt ?? NaN, hex: ac.hex, squawk: ac.squawk, vr: ac.vr, reg: ac.reg, type: ac.type, sel_alt_ft: ac.sel_alt_ft, sel_alt_hundreds: ac.sel_alt_hundreds});
@@ -1282,7 +1291,8 @@ function drawScope(){
     clTargets.push([ac.hex, px, py]);
     if(ac.hex === classicSel){ setStroke(colors.symbol); ctx.lineWidth = 1; ctx.strokeRect(px-9, py-9, 18, 18); }
     const squawkStr = (showSquawk && ac.squawk) ? String(ac.squawk).trim() : '';
-    const firstLine = label + (squawkStr? (' ' + squawkStr) : '');
+    const gaStr = ac.gaStart != null ? 'GA' : '';
+    const firstLine = label + (squawkStr? (' ' + squawkStr) : '') + (gaStr ? ' ' + gaStr : '');
 
     let lines = [firstLine];
     const altLine = (showAlt && Number.isFinite(ac.alt)) ? (()=>{
@@ -1341,16 +1351,23 @@ if(isTypeOn() && ac.type){ infoParts.push(ac.type); } /*TYPE_AFTER_REG*/
 
     for(let i=0;i<lines.length;i++){
       const y = placed.ty - (lines.length-1-i)*lineH;
-      if(i===0 && squawkStr){
-        const emergency = (squawkStr==='7500' || squawkStr==='7600' || squawkStr==='7700');
-        const prefix = label + ' ';
-        ctx.fillText(prefix, placed.tx, y);
-        const off = ctx.measureText(prefix).width;
-        const was = ctx.fillStyle;
+      if(i===0 && (squawkStr || gaStr)){
+        // callsign, then the squawk (an emergency squawk in red) and the go-around mark GA (red, flashing 60 s)
         const isFullEL = document.body.classList.contains('theme-full-el');
-        if(emergency && !isFullEL){ ctx.fillStyle = '#ff2d2d'; }
-        ctx.fillText(squawkStr, placed.tx + off, y);
-        ctx.fillStyle = was;
+        const was = ctx.fillStyle;
+        let x = placed.tx;
+        ctx.fillText(label + ' ', x, y); x += ctx.measureText(label + ' ').width;
+        if(squawkStr){
+          const emergency = (squawkStr==='7500' || squawkStr==='7600' || squawkStr==='7700');
+          if(emergency && !isFullEL){ ctx.fillStyle = '#ff2d2d'; }
+          ctx.fillText(squawkStr, x, y); x += ctx.measureText(squawkStr + ' ').width;
+          ctx.fillStyle = was;
+        }
+        if(gaStr && gaVisible(ac, now)){
+          if(!isFullEL){ ctx.fillStyle = '#ff2d2d'; }
+          ctx.fillText(gaStr, x, y);
+          ctx.fillStyle = was;
+        }
       } else {
         ctx.fillText(lines[i], placed.tx, y);
       }

@@ -28,7 +28,10 @@ top-left logo; nothing has to be edited by hand.
 - **Own position**: a small triangle at a position entered in decimal degrees
 - **METAR & TAF** window for any airport (EFHK by default): movable, resizable, remembered
 - **EFHK traffic** window: landings and departures (ARR / DEP / BOTH, 1 h – 1 d) with runway and
-  go-arounds, read from MODE-S Wind's database; click a row to draw that flight's track
+  go-arounds, read from MODE-S Wind's database and completed with the radar's own detection;
+  click a row to draw that flight's track
+- **Go-around alarm**: a red GA after the callsign (flashing 60 s, then steady until the landing),
+  from the radar's own EFHK go-around / landing / departure detection (`movements.py`)
 - **History line** of the selected aircraft: its whole current flight from the radar's own
   track recorder (`tracks.db`, 24 h), high resolution in turns and go-arounds
 - Move the map by dragging it, zoom with the mouse wheel (2–400 NM); ⌂ returns to the default centre
@@ -127,6 +130,27 @@ minute when standing still) — about 85 bytes a point, 6–8 MB per 100 aircraf
 busy day around EFHK is some tens of MB. A flight ends after
 20 minutes without positions. The file is written every 3 s and cleaned every hour.
 
+## EFHK movements (go-around alarm)
+
+`movements.py` follows every aircraft within 30 NM of EFHK below 5000 ft on each update
+(once a second), with altitudes corrected to MSL by the QNH of the latest EFHK METAR. It
+uses MODE-S Wind's go-around rules (collector/windshear.py), timed in seconds:
+
+- **approach** — in a runway's ILS corridor (±2.5 NM, 0–25 NM out, track within 60°, not
+  more than 1000 ft below the 3° path) and descending for 10 s;
+- **go-around** — on an approach, climbing ≥ 600 fpm below 2200 ft for 4 s and 50 ft; or,
+  after crossing the threshold, 200 ft above the height there (low go-around, touch-and-go);
+- **landing** — the threshold crossed and no climb for 60 s (or under 80 kt), or lost on
+  short final (within 4 NM, below 1500 ft);
+- **departure** — within 6 NM below 1500 ft, climbing ≥ 300 fpm at ≥ 90 kt, not on an
+  approach or after a go-around; runway from the direction and the extended centreline.
+
+A go-around puts `ga: {age, n, rwy}` on the aircraft in `/api/aircraft` (the GA mark) until
+the landing, at most 30 min. The events are stored in `tracks.db` (table `movements`, 24 h);
+the EFHK traffic window adds the landings and departures that MODE-S Wind has no row for
+(same aircraft and kind within 10 minutes, `own: true`). Without MODE-S Wind's database
+the window shows the radar's own rows only.
+
 ## Feed format
 
 A TCP server that sends one JSON array of aircraft per connection and closes it:
@@ -151,7 +175,7 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 | `/api/whatsnew` | the ten newest versions of `doc/whats_new.md` |
 | `/api/ac/<hex>` | Comm-B / EHS values of one aircraft (TopSky extended label) |
 | `/api/track/<hex>?t=&since=` | history line: the points `[t, lat, lon, alt, src]` of the flight around time `t` (default the latest), only newer than `since` |
-| `/api/ehs_status` | Beast feed reader: connected, messages, ADS-B positions, aircraft with Comm-B; `tracks`: recorder status |
+| `/api/ehs_status` | Beast feed reader: connected, messages, ADS-B positions, aircraft with Comm-B; `tracks`: recorder status; `movements`: QNH, GA marks, recent events |
 
 ## Folders
 
