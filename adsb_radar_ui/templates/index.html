@@ -53,6 +53,12 @@
       <div class="block">
         <div class="label">Labels & Navaids</div>
         <div class="controls toggles ui-controls">
+          <label title="TopSky: three-line labels with leader lines; mouse over or click an aircraft for the extended label">Label style:
+            <select id="labelStyle">
+              <option value="classic" selected>Classic</option>
+              <option value="topsky">TopSky (ATC)</option>
+            </select>
+          </label>
           <label>Label mode:
             <select id="labelMode">
               <option value="auto" selected>Auto (Callsign→ICAO24)</option>
@@ -194,6 +200,7 @@
   <script>
     window.RADAR_CENTER = {lat: {{ '%.6f' % center_lat }}, lon: {{ '%.6f' % center_lon }}};
   </script>
+  <script src="/static/js/topsky.js?v={{ asset_tag }}"></script>
   <script src="/static/js/radar.js?v={{ asset_tag }}"></script>
 </body>
 </html>

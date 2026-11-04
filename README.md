@@ -24,6 +24,11 @@ top-left logo; nothing has to be edited by hand.
 - Registration / type from BaseStation.sqb, completed from aircraft_ref.db (tar1090-db)
   when the feed has none — the files MODE-S Wind keeps up to date every morning
 - Auto QNH from the latest METAR (default EFHK) for altitudes below 5000 ft
+- Label style **Classic** (the original labels) or **TopSky (ATC)**: three-line labels
+  (callsign / level, trend and selected level / speed in tens of kt and type) with leader
+  lines and automatic anti-overlap, as in MODE-S Wind's ATC display; the aircraft under the
+  mouse or a clicked one shows the six-line extended label with IAS, TAS, Mach, magnetic
+  heading, drift, roll, wind, temperature and NACp from MODE-S Wind's Beast feed
 - Airports, navaids, waypoints and line overlays (coast, FIR, ATS routes, ILS, …)
 - Four themes, label overlap avoidance, ICAO24 hex range filter, traffic list with links
 - "FEED LOST" warning when the feed stops; targets are cleared after 30 s
@@ -70,12 +75,24 @@ it rolls back to the previous commit by itself. Hand edits made on the server ar
 | `REF_DB_PATH` | `~/mode_s_wind/data/aircraft_ref.db` | tar1090-db reference data; empty = off |
 | `METAR_STATION` | EFHK | Auto QNH station |
 | `METAR_URL` | NOAA tgftp `{icao}.TXT` | METAR source (same as MODE-S Wind) |
+| `BEAST_HOST` / `BEAST_PORT` | 127.0.0.1 / 31005 | MODE-S Wind's Beast feed for the extended label; `0` = off |
+| `MAG_DECLINATION` | 10.5 | used for the wind only if `pygeomag` (WMM2025) is missing |
 | `FEED_STALE_SECONDS` | 30 | feed silence before targets are cleared |
 | `MAX_RANGE_NM` | 0 | drop targets beyond this range (0 = off) |
 | `DEBUG_API` | 0 | `1` enables `/api/debug/reg?hex=…` and `/api/debug/schema` |
 
 Databases are opened read-only and never created; a changed or replaced file is noticed
 within 30 s. If `~/mode_s_wind/data` does not exist, `adsb_radar_ui/data/BaseStation.sqb` is used.
+
+## TopSky extended label and the Beast feed
+
+`ehs.py` reads MODE-S Wind's local Beast feed (switch on *Beast feed* on MODE-S Wind's
+Maintenance page; it listens on 127.0.0.1:31005 unless its config says otherwise) and
+decodes, with pyModeS like MODE-S Wind, only the replies of the aircraft on the radar:
+Comm-B BDS 5,0 / 6,0 / 4,0 and ADS-B types 29 / 31. The wind comes from a BDS 5,0 + 6,0
+pair (wings level), the temperature from TAS and Mach, both averaged over a minute —
+the same method as MODE-S Wind. Nothing is stored. Without the Beast feed the radar works
+as before and the extended label shows `---` for the Comm-B values.
 
 ## Feed format
 
@@ -96,6 +113,8 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 | `/api/navaids?clat=&clon=&nmr=` | airports / navaids / waypoints within `nmr` NM |
 | `/api/overlays_meta`, `/api/overlays_fetch` | line overlays (GeoJSON in `data/overlays`) |
 | `/api/qnh` | latest METAR and QNH |
+| `/api/ac/<hex>` | Comm-B / EHS values of one aircraft (TopSky extended label) |
+| `/api/ehs_status` | Beast feed reader: connected, messages, aircraft with Comm-B |
 
 ## Folders
 

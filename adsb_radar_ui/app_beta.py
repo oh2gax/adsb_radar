@@ -6,6 +6,7 @@ from urllib.request import pathname2url
 from flask import Flask, jsonify, render_template, request, abort
 from overlays import register_overlays
 import config
+import ehs
 
 app = Flask(__name__, static_url_path="/static")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -542,6 +543,7 @@ def fetch_data():
             # Only update cache if we actually got new_data.
             # On transient errors we keep previous targets and just update error info.
             if new_data is not None:
+                _ehs.set_feed(new_data.get("aircraft") or [])
                 _cache["data"] = new_data
                 _cache["err"] = new_err
                 _cache["ok_ts"] = time.time()
@@ -559,6 +561,10 @@ def fetch_data():
         _cache["_logged_err"] = _cache["err"]
         _cache["ts"] = time.time()
         time.sleep(max(1, config.POLL_SECONDS))
+
+# Comm-B / EHS values for the TopSky extended label (ehs.py)
+_ehs = ehs.EhsReceiver(config.BEAST_HOST, config.BEAST_PORT, config.MAG_DECLINATION)
+_ehs.start()
 
 threading.Thread(target=fetch_data, daemon=True).start()
 
@@ -786,6 +792,18 @@ def api_qnh():
         return jsonify({"station": _metar["station"], "qnh": _metar["qnh"], "obs_time": _metar["obs_time"],
                         "metar": _metar["metar"], "age_sec": round(age) if age is not None else None,
                         "error": _metar["error"]})
+
+
+@app.route("/api/ac/<icao>")
+def api_ac(icao):
+    """Comm-B / EHS values of one aircraft for the TopSky extended label (polled every 2 s
+    while the mouse is on it or it is selected)."""
+    return jsonify(_ehs.get(icao))
+
+
+@app.route("/api/ehs_status")
+def api_ehs_status():
+    return jsonify(_ehs.status())
 
 
 # Register overlays endpoints

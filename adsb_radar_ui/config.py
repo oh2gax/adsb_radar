@@ -32,5 +32,13 @@ FEED_STALE_SECONDS = float(os.environ.get("FEED_STALE_SECONDS", "30"))
 METAR_STATION = os.environ.get("METAR_STATION", "EFHK").strip().upper()
 METAR_URL = os.environ.get("METAR_URL", "https://tgftp.nws.noaa.gov/data/observations/metar/stations/{icao}.TXT")
 
+# Beast feed for the TopSky extended label (Comm-B: IAS, Mach, heading, roll, wind, temperature,
+# NACp). MODE-S Wind serves it on 127.0.0.1:31005 when "Beast feed" is on in its Maintenance page.
+# BEAST_PORT=0 turns the reader off.
+BEAST_HOST = os.environ.get("BEAST_HOST", "127.0.0.1")
+BEAST_PORT = int(os.environ.get("BEAST_PORT", "31005"))
+# Used for the wind when the pygeomag model is not installed (deg east, EFHK area)
+MAG_DECLINATION = float(os.environ.get("MAG_DECLINATION", "10.5"))
+
 # /api/debug/* pages are disabled unless DEBUG_API=1
 DEBUG_API = os.environ.get("DEBUG_API", "0") == "1"

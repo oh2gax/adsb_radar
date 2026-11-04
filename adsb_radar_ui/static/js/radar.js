@@ -49,6 +49,8 @@ document.addEventListener('DOMContentLoaded', ()=>{ applyTheme(); });
 let rangeNm = parseFloat(localStorage.getItem('rangeNm') || '20');
 let showCallsign = localStorage.getItem('showCallsign') !== '0';
 let labelMode = localStorage.getItem('labelMode') || 'auto';
+// Label style: 'classic' (the original labels) or 'topsky' (topsky.js: leader lines, extended label)
+let labelStyle = localStorage.getItem('labelStyle') === 'topsky' ? 'topsky' : 'classic';
 let showAlt = localStorage.getItem('showAlt') !== '0';
 // Hdg OFF by default unless user set it
 let showHdg = (localStorage.getItem('showHdg') ?? '0') === '1';
@@ -124,6 +126,7 @@ const showVectorCb = document.getElementById('showVector');
 const preventOverlapCb = document.getElementById('preventOverlap');
 const vectorMinsSel = document.getElementById('vectorMins');
 const labelModeSel = document.getElementById('labelMode');
+const labelStyleSel = document.getElementById('labelStyle');
 const showAirportsCb = document.getElementById('showAirports');
 const showNavaidsCb = document.getElementById('showNavaids');
 
@@ -163,6 +166,7 @@ if(showVectorCb) showVectorCb.checked = showVector;
 if(preventOverlapCb) preventOverlapCb.checked = preventOverlap;
 if(vectorMinsSel) vectorMinsSel.value = String(vectorMins);
 if(labelModeSel) labelModeSel.value = labelMode;
+if(labelStyleSel) labelStyleSel.value = labelStyle;
 if(showAirportsCb) showAirportsCb.checked = showAirports;
 if(showNavaidsCb) showNavaidsCb.checked = showNavaids;
 if(showFixesCb) showFixesCb.checked = showFixes;
@@ -222,6 +226,26 @@ if(preventOverlapCb) preventOverlapCb.onchange = () => { preventOverlap = preven
 if(vectorMinsSel) vectorMinsSel.onchange = () => { vectorMins = parseFloat(vectorMinsSel.value)||0.5; savePrefs(); };
 if(applyFilterBtn) applyFilterBtn.onclick = () => { localStorage.setItem('icaoRanges', icaoFilterTA.value.trim()); icaoRanges = parseRanges(icaoFilterTA.value.trim()); };
 if(labelModeSel) labelModeSel.onchange = () => { labelMode = labelModeSel.value; savePrefs(); };
+if(labelStyleSel) labelStyleSel.onchange = () => {
+  labelStyle = labelStyleSel.value === 'topsky' ? 'topsky' : 'classic';
+  localStorage.setItem('labelStyle', labelStyle);
+  if(labelStyle !== 'topsky' && tsUi) tsUi.clear();
+};
+
+// --- TopSky labels (topsky.js) ---
+let tsPos = {};            // hex -> chosen label position (0-15), keeps labels from jumping
+let tsRects = {};          // hex -> label box of the last frame
+let tsTargetsLast = [];    // [[hex, x, y]] of the symbols drawn in the last frame
+// level in hundreds of feet, 3 digits: QNH altitude below 5000 ft (as the classic A-level), else FL
+function tsLvl3(alt){
+  const adj = correctedAltFt(Number(alt));
+  return String(Math.max(0, Math.round((adj < 5000 ? adj : Number(alt)) / 100))).padStart(3,'0');
+}
+const tsUi = (typeof Topsky !== 'undefined') ? Topsky.interaction(canvas, {
+  active: () => labelStyle === 'topsky',
+  targets: () => tsTargetsLast,
+  rects: () => tsRects,
+}) : null;
 if(showAirportsCb) showAirportsCb.onchange = () => { showAirports = showAirportsCb.checked; savePrefs(); };
 if(showNavaidsCb) showNavaidsCb.onchange = () => { showNavaids = showNavaidsCb.checked; savePrefs(); };
 if(showFixesCb) showFixesCb.onchange = () => { showFixes = showFixesCb.checked; savePrefs(); };
@@ -445,6 +469,7 @@ async function fetchData(){
     // forget trails of aircraft that are no longer in the feed
     for(const hex of Array.from(trails.keys())){ if(!next.has(hex)){ trails.delete(hex); trailLastSample.delete(hex); } }
     aircraft = next;
+    if(tsUi) tsUi.forget(new Set(next.keys()));
     const upd = new Date().toISOString().slice(11,19) + 'Z';
     if(j.feed_lost){
       const age = Number.isFinite(j.feed_age) ? `no data for ${Math.round(j.feed_age)} s` : 'no data yet';
@@ -518,7 +543,7 @@ function setFill(c){ ctx.fillStyle = c; }
 function setStroke(c){ ctx.strokeStyle = c; }
 
 
-function drawNavaidsLayer(cx, cy, R){
+function drawNavaidsLayer(cx, cy, R, obst){   // obst: TopSky label obstacles (symbol + name boxes)
   let inView = {airports:0, navaids:0, fixes:0};
   const lineW = (typeof theme!=='undefined' && theme==='gray') ? 1.6 : 1.2;
   const data = window.navaidsData || {};
@@ -551,6 +576,7 @@ function drawNavaidsLayer(cx, cy, R){
       else { ctx.strokeRect(px-3, py-3, 6, 6); ctx.fillRect(px-3, py-3, 6, 6); }
       const ident = (it.ident || it.name || '').toString().trim();
       if(ident){ ctx.fillText(ident, px+6, py); }
+      if(obst) obst.push({x: px-5, y: py-6, w: 11 + (ident ? ctx.measureText(ident).width + 2 : 0), h: 12});
     }
   }
   ctx.restore();
@@ -771,6 +797,8 @@ function drawScope(){
   ctx.fillText(`Range: 0 – ${rangeNm} NM`, 10, 8);
 
   window.labelBoxes = [];
+  const ts = labelStyle === 'topsky' && typeof Topsky !== 'undefined' && tsUi;
+  const tsItems = [], tsObst = [], tsTargets = [];
   const ranges = icaoRanges;
   const posList = [];
   const now = Date.now();
@@ -817,6 +845,7 @@ function drawScope(){
         const tp = projectNm(arr2[i].lat, arr2[i].lon);
         const tx = cx + (tp.x / rangeNm) * R, ty = cy - (tp.y / rangeNm) * R;
         ctx.fillRect(Math.round(tx)-1, Math.round(ty)-1, 3, 3);
+        if(ts) tsObst.push({x: tx-2, y: ty-2, w: 4, h: 4});
       }
     }
 
@@ -833,6 +862,7 @@ function drawScope(){
       const vx = px + (dx / rangeNm) * R;
       const vy = py - (dy / rangeNm) * R;
       setStroke(colors.symbol); ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(vx,vy); ctx.stroke();
+      if(ts) Topsky.lineObstacles(px, py, vx, vy, tsObst);
       const thick = 24;
       vectorBB = {x1: Math.min(px, vx)-thick, y1: Math.min(py, vy)-thick, x2: Math.max(px, vx)+thick, y2: Math.max(py, vy)+thick};
       if(dx >= 0 && dy >= 0) vectorQuad = 'NE'; else if(dx < 0 && dy >= 0) vectorQuad = 'NW'; else if(dx >= 0 && dy < 0) vectorQuad = 'SE'; else vectorQuad = 'SW';
@@ -840,7 +870,22 @@ function drawScope(){
 
     // Label
     let label = (labelMode === 'icao') ? ac.hex : (labelMode === 'callsign' ? (ac.callsign || ac.hex) : ((localStorage.getItem('showCallsign')!=='0' && ac.callsign) ? ac.callsign : ac.hex));
-    
+
+    if(ts){
+      // TopSky label: collected here, placed and drawn after all symbols (topsky.js)
+      const isSel = tsUi.selected() === ac.hex, ext = isSel || tsUi.hover() === ac.hex;
+      const lines = ext
+        ? Topsky.extLines(ac, tsUi.data(ac.hex), {cs: label, lvl3: tsLvl3, center: [center.lat, center.lon]})
+        : Topsky.labelLines(ac, label, tsLvl3);
+      const sq = ac.squawk ? String(ac.squawk).trim() : '';
+      tsItems.push({key: ac.hex, p: {x: px, y: py}, lines, sel: isSel, ext,
+                    alt: Number.isFinite(ac.alt) ? ac.alt : 99999, emg: (!ext && Topsky.EMG.has(sq)) ? sq : ''});
+      tsTargets.push([ac.hex, px, py]);
+      if(isSel){ setStroke(colors.symbol); ctx.lineWidth = 1; ctx.strokeRect(px-9, py-9, 18, 18); }
+      posList.push({d:rnm, label, alt: ac.alt ?? NaN, hex: ac.hex, squawk: ac.squawk, vr: ac.vr, reg: ac.reg, type: ac.type, sel_alt_ft: ac.sel_alt_ft, sel_alt_hundreds: ac.sel_alt_hundreds});
+      continue;
+    }
+
     const squawkStr = (showSquawk && ac.squawk) ? String(ac.squawk).trim() : '';
     const firstLine = label + (squawkStr? (' ' + squawkStr) : '');
 
@@ -921,7 +966,16 @@ if(isTypeOn() && ac.type){ infoParts.push(ac.type); } /*TYPE_AFTER_REG*/
   }
 
   // Draw navaids last (on top)
-  drawNavaidsLayer(cx, cy, R);
+  drawNavaidsLayer(cx, cy, R, ts ? tsObst : null);
+
+  // TopSky labels over everything (topsky.js)
+  if(ts){
+    const mono = document.body.classList.contains('theme-full-el') || document.body.classList.contains('theme-full-el-yellow');
+    tsRects = Topsky.drawLabels(ctx, tsItems, w, h, tsObst, tsPos, {
+      text: colors.text, leader: colors.ring, extBg: colors.bg, emg: mono ? null : '#ff2d2d',
+      font: '12px ui-monospace, monospace'});
+    tsTargetsLast = tsTargets;
+  } else { tsRects = {}; tsTargetsLast = []; }
 
   // MODE-S / no-pos list
   const drawnHex = new Set(posList.map(x => x.hex));
