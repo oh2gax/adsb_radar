@@ -168,6 +168,14 @@
         </div>
       </div>
       <div class="block">
+        <div class="label">METAR &amp; TAF</div>
+        <div class="controls" style="flex-wrap:wrap; gap:8px;">
+          <label>ICAO <input id="wxIcaoInput" class="icao-input" type="text" maxlength="4" value="EFHK" spellcheck="false" autocomplete="off"></label>
+          <button class="btn" id="applyWx">Apply</button>
+          <label title="Show the METAR and TAF window on the scope"><input type="checkbox" id="wxOn"> Show</label>
+        </div>
+      </div>
+      <div class="block">
         <div class="label">ICAO24 filter (hex ranges)</div>
         <div class="controls">
           <textarea id="icaoFilter" placeholder="e.g. 600000-6FFFFF, 7C0000-7FFFFF"></textarea>
@@ -200,9 +208,13 @@
     </aside>
     <main class="stage">
       <canvas id="radarCanvas"></canvas>
-      <div id="wnWindow" class="wn-window" role="dialog" aria-label="What's new" hidden>
+      <div id="wnWindow" class="atc-window wn-window" role="dialog" aria-label="What's new" hidden>
         <div class="wn-head"><span>WHAT'S NEW</span><button id="wnClose" class="wn-close" type="button" title="Close (Esc)">&times;</button></div>
         <div id="wnBody" class="wn-body">Loading…</div>
+      </div>
+      <div id="wxWindow" class="atc-window wx-window" role="dialog" aria-label="METAR and TAF" hidden>
+        <div class="wn-head wx-head" title="Drag to move; resize from the lower-right corner"><span id="wxTitle">METAR &amp; TAF</span><button id="wxClose" class="wn-close" type="button" title="Close">&times;</button></div>
+        <div id="wxBody" class="wn-body">Loading…</div>
       </div>
       <div class="overlayBtns">
         <button class="btn" id="btnZoomIn" title="Zoom in (smaller range)">+</button>
@@ -216,5 +228,6 @@
   <script src="/static/js/topsky.js?v={{ asset_tag }}"></script>
   <script src="/static/js/radar.js?v={{ asset_tag }}"></script>
   <script src="/static/js/whatsnew.js?v={{ asset_tag }}"></script>
+  <script src="/static/js/wx.js?v={{ asset_tag }}"></script>
 </body>
 </html>

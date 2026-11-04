@@ -734,14 +734,16 @@ def api_aircraft():
     return jsonify(out), 200
 
 
-# --- Auto QNH from the latest METAR (same NOAA source and parsing as MODE-S Wind) ---
-# Fetched only when a browser with "Auto" QNH asks for it, at most every 10 minutes
-# (2 minutes after a failure), and shared by all viewers.
-METAR_REFRESH_SEC = 600
-METAR_RETRY_SEC = 120
-_metar = {"station": config.METAR_STATION, "metar": None, "qnh": None, "obs_time": None,
-          "ok_ts": 0.0, "next_fetch": 0.0, "error": None}
-_metar_lock = threading.Lock()
+# --- METAR / TAF (same NOAA tgftp source and parsing as MODE-S Wind) ---
+# One cache per airport, shared by all viewers: fetched only when someone asks (Auto QNH,
+# the METAR & TAF window), at most every 10 minutes (2 minutes after a failure). On a
+# failure the last good report is kept and the error is passed on.
+WX_REFRESH_SEC = 600
+WX_RETRY_SEC = 120
+WX_MAX_STATIONS = 50
+TAF_URL = os.environ.get("TAF_URL", "https://tgftp.nws.noaa.gov/data/forecasts/taf/stations/{icao}.TXT")
+_wx = {}                       # ICAO -> entry
+_wx_lock = threading.Lock()    # protects _wx; each entry has its own lock for the fetch
 
 
 def _parse_qnh(metar_text):
@@ -757,41 +759,81 @@ def _parse_qnh(metar_text):
     return v if 900 <= v <= 1100 else None
 
 
-def _fetch_metar():
-    url = config.METAR_URL.format(icao=_metar["station"])
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": f"adsb_radar/{APP_VERSION}"})
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            raw = resp.read().decode("utf-8", errors="replace").strip()
-        lines = raw.splitlines()
-        text = "\n".join(lines[1:]).strip() if len(lines) > 1 else raw   # line 1 = date/time
-        qnh = _parse_qnh(text)
-        if qnh is None:
-            raise ValueError("no QNH in METAR")
-        t = re.search(r"\b(\d{6})Z\b", text)
-        _metar.update({"metar": text, "qnh": qnh, "obs_time": (t.group(1) + "Z") if t else None,
-                       "ok_ts": time.time(), "error": None})
-        _metar["next_fetch"] = time.time() + METAR_REFRESH_SEC
-        if _metar.get("_logged_err"):
-            print(f"[metar] {_metar['station']} OK again: Q{qnh:.0f}", flush=True)
-        _metar["_logged_err"] = None
-    except Exception as e:
-        _metar["error"] = str(e)
-        _metar["next_fetch"] = time.time() + METAR_RETRY_SEC
-        if _metar.get("_logged_err") != str(e):
-            print(f"[metar] {_metar['station']} fetch failed: {e}", flush=True)
-        _metar["_logged_err"] = str(e)
+def _fetch_text(url):
+    """A NOAA station file: line 1 is the date/time, the rest the report."""
+    req = urllib.request.Request(url, headers={"User-Agent": f"adsb_radar/{APP_VERSION}"})
+    with urllib.request.urlopen(req, timeout=8) as resp:
+        raw = resp.read().decode("utf-8", errors="replace").strip()
+    lines = raw.splitlines()
+    return "\n".join(l.rstrip() for l in lines[1:]).strip() if len(lines) > 1 else raw
+
+
+def _wx_fetch(e):
+    icao, now, errs = e["icao"], time.time(), []
+    for kind, url in (("metar", config.METAR_URL), ("taf", TAF_URL)):
+        try:
+            text = _fetch_text(url.format(icao=icao))
+            if not text:
+                raise ValueError("empty report")
+            e[kind], e[kind + "_ok_ts"], e[kind + "_err"] = text, now, None
+        except Exception as ex:
+            msg = "not available" if "404" in str(ex) else str(ex)
+            e[kind + "_err"] = msg
+            errs.append(f"{kind.upper()} {msg}")
+    # a network error: try again in 2 min; "not available" (no such report, e.g. no TAF): 10 min
+    hard = any(e[k + "_err"] and e[k + "_err"] != "not available" for k in ("metar", "taf"))
+    e["next_fetch"] = now + (WX_RETRY_SEC if hard else WX_REFRESH_SEC)
+    msg = "; ".join(errs) or None
+    if msg != e.get("_logged"):
+        print(f"[wx] {icao}: {msg or 'OK again'}", flush=True)
+    e["_logged"] = msg
+
+
+def wx_get(icao):
+    """METAR / TAF entry of one airport (fetched if older than the refresh time)."""
+    icao = (icao or "").strip().upper()
+    with _wx_lock:
+        e = _wx.get(icao)
+        if e is None:
+            if len(_wx) >= WX_MAX_STATIONS:          # forget the least recently used
+                del _wx[min(_wx, key=lambda k: _wx[k]["used"])]
+            e = _wx[icao] = {"icao": icao, "metar": None, "taf": None, "metar_ok_ts": 0.0, "taf_ok_ts": 0.0,
+                             "metar_err": None, "taf_err": None, "next_fetch": 0.0, "lock": threading.Lock()}
+        e["used"] = time.time()
+    with e["lock"]:
+        if time.time() >= e["next_fetch"]:
+            _wx_fetch(e)
+        return dict(e)
+
+
+def _obs_time(text):
+    t = re.search(r"\b(\d{6})Z\b", text or "")
+    return (t.group(1) + "Z") if t else None
 
 
 @app.route("/api/qnh")
 def api_qnh():
-    with _metar_lock:
-        if time.time() >= _metar["next_fetch"]:
-            _fetch_metar()
-        age = (time.time() - _metar["ok_ts"]) if _metar["ok_ts"] else None
-        return jsonify({"station": _metar["station"], "qnh": _metar["qnh"], "obs_time": _metar["obs_time"],
-                        "metar": _metar["metar"], "age_sec": round(age) if age is not None else None,
-                        "error": _metar["error"]})
+    e = wx_get(config.METAR_STATION)
+    qnh = _parse_qnh(e["metar"]) if e["metar"] else None
+    age = (time.time() - e["metar_ok_ts"]) if e["metar_ok_ts"] else None
+    err = e["metar_err"] or (None if qnh is not None or not e["metar"] else "no QNH in METAR")
+    return jsonify({"station": e["icao"], "qnh": qnh, "obs_time": _obs_time(e["metar"]),
+                    "metar": e["metar"], "age_sec": round(age) if age is not None else None, "error": err})
+
+
+@app.route("/api/wx")
+def api_wx():
+    """METAR and TAF of one airport for the METAR & TAF window (?icao=EFHK)."""
+    icao = (request.args.get("icao") or config.METAR_STATION).strip().upper()
+    if not re.fullmatch(r"[A-Z][A-Z0-9]{3}", icao):
+        return jsonify({"icao": icao, "error": "ICAO code must be 4 letters/digits, e.g. EFHK"}), 400
+    e = wx_get(icao)
+    now = time.time()
+    age = lambda ts: round(now - ts) if ts else None
+    return jsonify({"icao": icao, "metar": e["metar"], "taf": e["taf"],
+                    "metar_time": _obs_time(e["metar"]), "taf_time": _obs_time(e["taf"]),
+                    "metar_age": age(e["metar_ok_ts"]), "taf_age": age(e["taf_ok_ts"]),
+                    "metar_error": e["metar_err"], "taf_error": e["taf_err"]})
 
 
 # --- What's new (doc/whats_new.md) ---

@@ -19,6 +19,7 @@ function refreshColors(){
     navaid: rs('--radar-navaid'),
     airport: rs('--radar-airport'),
     fix: rs('--radar-fix'),
+    own: rs('--radar-own') || rs('--radar-symbol'),
   };
 }
 function applyTheme(){
@@ -357,10 +358,10 @@ function drawOwnPosition(cx, cy, R, obst){
   const pr = projectNm(ownPos.lat, ownPos.lon);
   const x = cx + (pr.x / rangeNm) * R, y = cy - (pr.y / rangeNm) * R;
   ctx.save();
-  setStroke(colors.symbol); ctx.lineWidth = 1.5; ctx.lineJoin = 'miter';
-  ctx.beginPath(); ctx.moveTo(x, y-5); ctx.lineTo(x+4.5, y+3.5); ctx.lineTo(x-4.5, y+3.5); ctx.closePath(); ctx.stroke();   // small triangle
+  setStroke(colors.own || colors.symbol); ctx.lineWidth = 1.2; ctx.lineJoin = 'miter';
+  ctx.beginPath(); ctx.moveTo(x, y-4); ctx.lineTo(x+3.5, y+2.5); ctx.lineTo(x-3.5, y+2.5); ctx.closePath(); ctx.stroke();   // small triangle
   ctx.restore();
-  if(obst) obst.push({x: x-7, y: y-7, w: 14, h: 13});
+  if(obst) obst.push({x: x-6, y: y-6, w: 12, h: 10});
 }
 
 // Utils
@@ -840,7 +841,14 @@ function drawScope(){
   window.labelBoxes = [];
   const ts = labelStyle === 'topsky' && typeof Topsky !== 'undefined' && tsUi;
   const tsItems = [], tsObst = [], tsTargets = [];
-  if(ts) tsObst.push({x: 4, y: 24, w: 44, h: 80});      // the zoom buttons in the top-left corner
+  if(ts){
+    tsObst.push({x: 4, y: 24, w: 44, h: 80});           // the zoom buttons in the top-left corner
+    const wxw = document.getElementById('wxWindow');      // the METAR & TAF window
+    if(wxw && !wxw.hidden){
+      const c = canvas.getBoundingClientRect(), r = wxw.getBoundingClientRect();
+      tsObst.push({x: r.left - c.left - 4, y: r.top - c.top - 4, w: r.width + 8, h: r.height + 8});
+    }
+  }
   const ranges = icaoRanges;
   const posList = [];
   const now = Date.now();

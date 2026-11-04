@@ -25,7 +25,8 @@ top-left logo; nothing has to be edited by hand.
   when the feed has none — the files MODE-S Wind keeps up to date every morning
 - **What's new** link under the logo: the notes of the ten newest versions in a window over
   the scope (`doc/whats_new.md`)
-- **Own position**: a small marker at a position entered in decimal degrees
+- **Own position**: a small triangle at a position entered in decimal degrees
+- **METAR & TAF** window for any airport (EFHK by default): movable, resizable, remembered
 - Auto QNH from the latest METAR (default EFHK) for altitudes below 5000 ft
 - Label style **Classic** (the original labels) or **TopSky (ATC)**: three-line labels
   (callsign / level, trend and selected level / speed in tens of kt and type) with leader
@@ -80,6 +81,7 @@ it rolls back to the previous commit by itself. Hand edits made on the server ar
 | `REF_DB_PATH` | `~/mode_s_wind/data/aircraft_ref.db` | tar1090-db reference data; empty = off |
 | `METAR_STATION` | EFHK | Auto QNH station |
 | `METAR_URL` | NOAA tgftp `{icao}.TXT` | METAR source (same as MODE-S Wind) |
+| `TAF_URL` | NOAA tgftp `forecasts/taf/stations/{icao}.TXT` | TAF source (same as MODE-S Wind) |
 | `BEAST_HOST` / `BEAST_PORT` | 127.0.0.1 / 31005 | MODE-S Wind's Beast feed for the extended label; `0` = off |
 | `MAG_DECLINATION` | 10.5 | used for the wind only if `pygeomag` (WMM2025) is missing |
 | `FEED_STALE_SECONDS` | 30 | feed silence before targets are cleared |
@@ -117,7 +119,8 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 | `/api/aircraft` | targets, `feed_age`, `error`, `feed_lost`, `version` |
 | `/api/navaids?clat=&clon=&nmr=` | airports / navaids / waypoints within `nmr` NM |
 | `/api/overlays_meta`, `/api/overlays_fetch` | line overlays (GeoJSON in `data/overlays`) |
-| `/api/qnh` | latest METAR and QNH |
+| `/api/qnh` | latest METAR and QNH (Auto QNH, `METAR_STATION`) |
+| `/api/wx?icao=EFHK` | METAR and TAF of one airport (cached 10 min, shared by all viewers) |
 | `/api/whatsnew` | the ten newest versions of `doc/whats_new.md` |
 | `/api/ac/<hex>` | Comm-B / EHS values of one aircraft (TopSky extended label) |
 | `/api/ehs_status` | Beast feed reader: connected, messages, aircraft with Comm-B |

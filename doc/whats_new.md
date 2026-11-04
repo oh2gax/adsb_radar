@@ -7,15 +7,16 @@ Format: a version starts with `## v.DDMMYYYY — title`; under it bullets (`- `,
 sub-bullets indented by two spaces) or plain paragraphs. **bold**, *italic* and
 `code` are shown as such.
 
-## v.04112026 — TopSky labels with an extended label, What's new, own position, zoom buttons on the scope
+## v.04112026 — TopSky labels with an extended label, METAR & TAF window, What's new, own position, zoom buttons on the scope
 
 - **TopSky label style** — *Labels & Navaids → Label style: TopSky (ATC)* draws the labels as on a controller's radar display: callsign / level, trend and selected level (`032↓030`) / ground speed in tens of knots and type (`21 A320`), with a leader line. The labels move by themselves so that they do not cover each other, the aircraft, the vectors, the trails or the navaid names, and they keep their place while it stays free. An emergency squawk is shown in red after the callsign. *Classic* keeps the original labels.
 - **Extended label** — with TopSky labels, move the mouse over an aircraft to see six lines: callsign, type and registration; level, selected level, vertical rate and autopilot / approach mode; GS, TAS, IAS and Mach; magnetic heading, magnetic track, drift and roll; wind with its head / tail and cross components, and the outside air temperature; distance and bearing from the radar centre, NACp and squawk.
   - Click an aircraft to keep its extended label open; click it again or click the empty scope to close it.
   - The air data come from the aircraft's own Mode S replies (Comm-B), received by MODE-S Wind's receiver and decoded here; wind and temperature are averaged over the last minute. A value not heard for 20 s shows as `---`.
+- **METAR & TAF** — the new *METAR & TAF* box: enter an airport's ICAO code (EFHK by default, any other such as EFTU), press *Apply* or Enter, and tick *Show*. A window on the scope shows the latest METAR and TAF with their times and how old they are (a METAR older than 90 minutes in red). It opens at the top right; drag it by its title bar and resize it from its lower-right corner — the place, size and airport are remembered. The reports come from the same NOAA source as in MODE-S Wind and are refreshed every 10 minutes.
 - **What's new** — this window: the link under the logo shows the changes of the latest versions. A small dot after the link marks a version you have not opened yet.
 - **Zoom buttons on the scope** — **+** and **−** are now see-through buttons in the top-left corner of the scope, under the range (clearer on hover); the empty strip under the scope is gone.
-- **Own position** — tick *Show* in the new *Own position* box and enter your latitude and longitude in decimal degrees (e.g. 60.2500, 24.8500); a small triangle marks it on the scope. Remembered in this browser.
+- **Own position** — tick *Show* in the new *Own position* box and enter your latitude and longitude in decimal degrees (e.g. 60.2500, 24.8500); a small triangle marks it on the scope (light grey in the Gray theme). Remembered in this browser.
 
 ## v.03112026 — Auto QNH, registrations from MODE-S Wind, many fixes
 
