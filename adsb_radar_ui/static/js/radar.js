@@ -58,6 +58,7 @@ let showHdg = (localStorage.getItem('showHdg') ?? '0') === '1';
 let showReg = (localStorage.getItem('showReg') ?? '1') === '1';
 // Trail ON by default
 let showTrail = (localStorage.getItem('showTrail') ?? '1') === '1';
+let showHistory = (localStorage.getItem('showHistory') ?? '1') === '1';   // the history line of the selected aircraft
 // Speed, Squawk, Vector default ON
 let showSpd = (localStorage.getItem('showSpd') ?? '1') === '1';
 let showSquawk = (localStorage.getItem('showSquawk') ?? '1') === '1';
@@ -126,6 +127,7 @@ const showCallsignCb = document.getElementById('showCallsign');
 const showAltCb = document.getElementById('showAlt');
 const showHdgCb = document.getElementById('showHdg');
 const showTrailCb = document.getElementById('showTrail');
+const showHistoryCb = document.getElementById('showHistory');
 const trailLenSel = document.getElementById('trailLenSec');
 const showSpdCb = document.getElementById('showSpd');
 const showSquawkCb = document.getElementById('showSquawk');
@@ -165,6 +167,7 @@ if(showCallsignCb) showCallsignCb.checked = showCallsign;
 if(showAltCb) showAltCb.checked = showAlt;
 if(showHdgCb) showHdgCb.checked = showHdg;
 if(showTrailCb) showTrailCb.checked = showTrail;
+if(showHistoryCb) showHistoryCb.checked = showHistory;
 
 if(trailLenSel) trailLenSel.value = String(trailLenSec);
 if(showSpdCb) showSpdCb.checked = showSpd;
@@ -196,6 +199,7 @@ function savePrefs(){
   localStorage.setItem('showAlt', showAlt ? '1' : '0');
   localStorage.setItem('showHdg', showHdg ? '1' : '0');
   localStorage.setItem('showTrail', showTrail ? '1' : '0');
+  localStorage.setItem('showHistory', showHistory ? '1' : '0');
   localStorage.setItem('trailLenSec', String(trailLenSec));
   localStorage.setItem('showSpd', showSpd ? '1' : '0');
   localStorage.setItem('showSquawk', showSquawk ? '1' : '0');
@@ -233,6 +237,7 @@ if(showCallsignCb) showCallsignCb.onchange = () => { showCallsign = showCallsign
 if(showAltCb) showAltCb.onchange = () => { showAlt = showAltCb.checked; savePrefs(); };
 if(showHdgCb) showHdgCb.onchange = () => { showHdg = showHdgCb.checked; savePrefs(); };
 if(showTrailCb) showTrailCb.onchange = () => { showTrail = showTrailCb.checked; if(!showTrail){ trails.clear(); trailLastSample.clear(); } savePrefs(); };
+if(showHistoryCb) showHistoryCb.onchange = () => { showHistory = showHistoryCb.checked; savePrefs(); requestDraw(); };
 if(trailLenSel) trailLenSel.onchange = () => { trailLenSec = parseFloat(trailLenSel.value)||60; savePrefs(); };
 if(showSpdCb) showSpdCb.onchange = () => { showSpd = showSpdCb.checked; savePrefs(); };
 if(showSquawkCb) showSquawkCb.onchange = () => { showSquawk = showSquawkCb.checked; savePrefs(); };
@@ -457,10 +462,10 @@ canvas.addEventListener('click', e => {
   const x = e.clientX - r.left, y = e.clientY - r.top;
   let hit;
   if(labelStyle === 'topsky'){
-    hit = nearestTarget(tsTargetsLast, x, y, 14);
+    hit = nearestTarget(tsTargetsLast, x, y, Math.max(14, window.RADAR_HIT_PX || 0));
     if(!hit){ const R = tsRects[selectedHex()]; if(R && x >= R.x - 4 && x <= R.x + R.w + 4 && y >= R.y - 3 && y <= R.y + R.h + 2) hit = selectedHex(); }
   } else {
-    hit = nearestTarget(classicTargets, x, y, 12);
+    hit = nearestTarget(classicTargets, x, y, Math.max(12, window.RADAR_HIT_PX || 0));
     classicSel = hit ? (hit === classicSel ? null : hit) : null;
   }
   if(!hit && hist && !hist.follow) histClear();
@@ -589,10 +594,11 @@ function drawOwnPosition(cx, cy, R, obst){
   const pr = projectNm(ownPos.lat, ownPos.lon);
   const x = cx + (pr.x / rangeNm) * R, y = cy - (pr.y / rangeNm) * R;
   ctx.save();
-  setStroke(colors.own || colors.symbol); ctx.lineWidth = 1.2; ctx.lineJoin = 'miter';
-  ctx.beginPath(); ctx.moveTo(x, y-4); ctx.lineTo(x+3.5, y+2.5); ctx.lineTo(x-3.5, y+2.5); ctx.closePath(); ctx.stroke();   // small triangle
+  const k = window.RADAR_OWN_SCALE || 1;     // the mobile app draws it larger (a GPS position on a phone)
+  setStroke(k > 1 ? colors.symbol : (colors.own || colors.symbol)); ctx.lineWidth = 1.2 * Math.sqrt(k); ctx.lineJoin = 'miter';
+  ctx.beginPath(); ctx.moveTo(x, y-4*k); ctx.lineTo(x+3.5*k, y+2.5*k); ctx.lineTo(x-3.5*k, y+2.5*k); ctx.closePath(); ctx.stroke();   // small triangle
   ctx.restore();
-  if(obst) obst.push({x: x-6, y: y-6, w: 12, h: 10});
+  if(obst) obst.push({x: x-6*k, y: y-6*k, w: 12*k, h: 10*k});
 }
 
 // Utils
@@ -1176,13 +1182,13 @@ function drawScope(){
   const ts = labelStyle === 'topsky' && typeof Topsky !== 'undefined' && tsUi;
   const tsItems = [], tsObst = [], tsTargets = [];
   if(ts){
-    tsObst.push({x: 4, y: 24, w: 44, h: 116});          // the zoom and home buttons in the top-left corner
-    for(const id of ['wxWindow', 'trWindow']){           // the METAR & TAF and EFHK traffic windows
-      const el = document.getElementById(id);
-      if(el && !el.hidden){
-        const c = canvas.getBoundingClientRect(), r = el.getBoundingClientRect();
-        tsObst.push({x: r.left - c.left - 4, y: r.top - c.top - 4, w: r.width + 8, h: r.height + 8});
-      }
+    // controls on the scope (.scope-obst: the zoom buttons, the METAR & TAF and EFHK traffic windows,
+    // the mobile app's buttons) keep the labels away
+    const c = canvas.getBoundingClientRect();
+    for(const el of document.querySelectorAll('.scope-obst')){
+      if(el.hidden || !el.offsetParent) continue;
+      const r = el.getBoundingClientRect();
+      tsObst.push({x: r.left - c.left - 4, y: r.top - c.top - 4, w: r.width + 8, h: r.height + 8});
     }
   }
   const ranges = icaoRanges;
@@ -1192,7 +1198,7 @@ function drawScope(){
 
   // the history line of the selected aircraft, under the symbols
   histSync();
-  drawHistory(cx, cy, R, ts ? tsObst : null);
+  if(showHistory) drawHistory(cx, cy, R, ts ? tsObst : null);
 
   // Draw aircraft with position
   for(const ac of aircraft.values()){

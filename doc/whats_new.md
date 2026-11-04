@@ -7,8 +7,16 @@ Format: a version starts with `## v.DDMMYYYY — title`; under it bullets (`- `,
 sub-bullets indented by two spaces) or plain paragraphs. **bold**, *italic* and
 `code` are shown as such.
 
-## v.04112026 — Go-around alarm, history line of the selected aircraft, TopSky labels with an extended label, EFHK traffic and METAR & TAF windows, move and zoom the map with the mouse, 1-second updates, What's new, own position
+## v.04112026 — Mobile app, go-around alarm, history line of the selected aircraft, TopSky labels with an extended label, EFHK traffic and METAR & TAF windows, move and zoom the map with the mouse, 1-second updates, What's new, own position
 
+- **Mobile app** — open **radar.oh2gax.org/app** on a phone (or the *Mobile version* link under the logo): the scope full screen, all choices in the **☰** menu, in the ATC Gray style. *Add to Home Screen* in the browser makes it open like an app.
+  - Drag with one finger to move the map, pinch with two to zoom, tap an aircraft (or its label) to select it — TopSky's extended label and the history line — and tap the empty scope to release it. **+** / **−** / **⌂** at the bottom right.
+  - **◎** shows your own position from the phone's GPS and centres the map on it; tap again to switch it off.
+  - The menu: label style Classic / TopSky and what the labels show, vector, trail and history line, the map lines (coastline, water, airport, borders, FIR, ATS routes), the theme, Auto QNH, and *Keep the screen on*. The theme button in the bar steps through the themes.
+  - **EFHK traffic** and **METAR & TAF** open as their own pages; a tap on a traffic row shows that flight's track on the scope.
+  - The app keeps its own settings: changing something on the phone does not change the desktop page, and *Reset* in the app clears only the app's.
+- **Select by the label** — with TopSky labels a click (or a tap) on an aircraft's label now selects that aircraft too.
+- **History line on / off** — *Labels & Navaids → History line* (on by default).
 - **Go-around alarm** — when an aircraft goes around at EFHK, a red **GA** appears after its callsign in the label (TopSky and Classic): flashing for the first minute, then steady until it lands (or leaves the area, at most 30 minutes). A touch-and-go counts as a go-around too.
   - The radar finds the go-around itself, within a few seconds, from the 1-second positions: an aircraft established on an approach that starts to climb, or climbs away after crossing the threshold — the same rules as in MODE-S Wind. The altitudes are corrected with the QNH of the latest EFHK METAR.
 - **Emergency squawk** — 7500 / 7600 / 7700 now stays red after the callsign also in the TopSky extended label.

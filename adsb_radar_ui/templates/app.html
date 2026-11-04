@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <!-- RADAR mobile app /app (from 2026-11-04): the scope full screen, every choice in the ☰ menu
+       (static/js/app.js, static/css/app.css). The desktop sidebar is included hidden: radar.js reads
+       and drives its controls, the menu sets them. Settings are kept apart from the desktop page. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>RADAR</title>
+  <meta name="theme-color" content="#cfcfcf">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="RADAR">
+  <link rel="manifest" href="/app.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/app-192.png?v={{ asset_tag }}">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png?v={{ asset_tag }}">
+  <link rel="stylesheet" href="/static/css/style.css?v={{ asset_tag }}">
+  <link rel="stylesheet" href="/static/css/app.css?v={{ asset_tag }}">
+  <script>
+    // The app's own settings: every key of this page is stored as "m." + key, so the desktop page
+    // and the app do not change each other's settings ("Reset" clears only the app's).
+    (function () {
+      var P = Storage.prototype, get = P.getItem, set = P.setItem, rem = P.removeItem, key = P.key;
+      var M = 'm.';
+      P.getItem = function (k) { return get.call(this, M + k); };
+      P.setItem = function (k, v) { return set.call(this, M + k, v); };
+      P.removeItem = function (k) { return rem.call(this, M + k); };
+      P.clear = function () {
+        var ks = [];
+        for (var i = 0; i < this.length; i++) { var k = key.call(this, i); if (k && k.indexOf(M) === 0) ks.push(k); }
+        for (var j = 0; j < ks.length; j++) rem.call(this, ks[j]);
+      };
+      // first start: phone defaults
+      try {
+        if (localStorage.getItem('appInit') == null) {
+          var d = { labelStyle: 'topsky', rangeNm: '20', theme: 'gray', showTrail: '1', trailLenSec: '60',
+                    showVector: '1', vectorMins: '1', showHistory: '1', showType: '0', showReg: '1', showHdg: '0',
+                    showRings: '1', qnhAuto: '1', overlayDecimate: '2', showAirports: '0', showNavaids: '0',
+                    showFixes: '0', ov_efhk_coast: '1', ov_efhk_aqua: '1', ov_efhk_apt: '1', ov_efhk_fir: '1',
+                    appWake: '1', appInit: '1' };
+          for (var k in d) localStorage.setItem(k, d[k]);
+        }
+      } catch (e) {}
+    })();
+    window.RADAR_APP = true;
+    window.RADAR_HIT_PX = 24;          // a finger: hit an aircraft within 24 px
+    window.RADAR_NO_HOVER = true;      // no hover on a touch screen; a tap selects
+    window.RADAR_OWN_SCALE = 2;        // own position (GPS) larger and in the symbol colour
+    window.RADAR_CENTER = {lat: {{ '%.6f' % center_lat }}, lon: {{ '%.6f' % center_lon }}};
+    window.RADAR_ASSET = "{{ asset_tag }}";
+    window.RADAR_VERSION = "{{ version }}";
+  </script>
+</head>
+<body class="app-body">
+
+<header class="app-bar">
+  <button id="appMenuBtn" class="app-ib" type="button" aria-label="Menu" aria-controls="appDrawer" aria-expanded="false">☰<span id="appMenuDot" class="app-dot" hidden></span></button>
+  <div class="app-title"><b id="appTitle">RADAR</b><small id="appSub"></small></div>
+  <div class="app-utc" aria-label="Current time, UTC"><b id="appUtc">--:--</b><small>UTC</small></div>
+  <button id="appThemeBtn" class="app-ib app-theme-btn" type="button" aria-label="Theme" title="Theme">◐</button>
+  <span id="appFeed" class="app-feed" title="Feed"></span>
+</header>
+
+<main class="app-stage" id="appStage">
+  <canvas id="radarCanvas"></canvas>
+  <div class="app-zoom scope-obst" id="appZoom">
+    <button type="button" id="appGps" class="app-zb" aria-label="My position (GPS)" title="My position (GPS)">◎</button>
+    <button type="button" id="appZoomIn" class="app-zb" aria-label="Zoom in">+</button>
+    <button type="button" id="appZoomOut" class="app-zb" aria-label="Zoom out">−</button>
+    <button type="button" id="appHome" class="app-zb" aria-label="Back to EFHK">⌂</button>
+  </div>
+  <div id="appToast" class="app-toast" role="status" aria-live="polite" hidden></div>
+</main>
+
+<!-- full-page views (tiles of the menu) -->
+<section id="vTraffic" class="app-page" hidden>
+  <div class="app-pbar">
+    <span class="app-seg" id="trKinds"><button type="button" data-kind="arr">ARR</button><button type="button" data-kind="dep">DEP</button><button type="button" data-kind="both">BOTH</button></span>
+    <span class="app-seg" id="trHours"><button type="button" data-hours="1">1h</button><button type="button" data-hours="3">3h</button><button type="button" data-hours="6">6h</button><button type="button" data-hours="12">12h</button><button type="button" data-hours="24">1d</button></span>
+  </div>
+  <div id="trCountM" class="app-cnt"></div>
+  <div id="trBodyM" class="app-pbody">Loading…</div>
+</section>
+
+<section id="vWx" class="app-page" hidden>
+  <div class="app-pbar app-wx-bar">
+    <span class="app-chips" id="wxChips"></span>
+    <form id="wxForm" class="app-wx-form" autocomplete="off"><input id="wxIcao" maxlength="4" placeholder="ICAO" aria-label="Airport ICAO code" autocapitalize="characters"><button type="submit">Show</button></form>
+  </div>
+  <div id="wxBodyM" class="app-pbody app-wx">Loading…</div>
+</section>
+
+<section id="vNews" class="app-page" hidden>
+  <div id="newsBody" class="app-pbody app-news">Loading…</div>
+</section>
+
+<!-- the menu -->
+<div id="appShade" class="app-shade" hidden></div>
+<nav id="appDrawer" class="app-drawer" aria-label="Menu" aria-hidden="true">
+  <div class="app-dh">
+    <b>RADAR</b>
+    <button type="button" class="app-pill" id="appNewsBtn">What's new<span id="appNewsDot" class="app-dot" hidden></span></button>
+    <button id="appMenuClose" class="app-ib" type="button" aria-label="Close">✕</button>
+  </div>
+  <div class="app-tiles" role="group" aria-label="View">
+    <button type="button" class="app-tile" data-view="radar"><b>Radar</b><small>live scope</small></button>
+    <button type="button" class="app-tile" data-view="traffic"><b>EFHK traffic</b><small>arrivals · departures</small></button>
+    <button type="button" class="app-tile" data-view="wx"><b>METAR &amp; TAF</b><small>EFHK · any airport</small></button>
+    <a class="app-tile" href="/"><b>Full version</b><small>the desktop page</small></a>
+  </div>
+
+  <details class="app-sec" open>
+    <summary>LABELS</summary>
+    <div class="app-sb">
+      <div class="app-fl">STYLE</div>
+      <div class="app-chips" data-select="labelStyle"><button data-v="classic">Classic</button><button data-v="topsky">TopSky</button></div>
+      <div class="app-fl">SHOW</div>
+      <div class="app-chips" data-select="labelMode"><button data-v="auto">Auto</button><button data-v="callsign">Callsign</button><button data-v="icao">ICAO24</button></div>
+      <div class="app-tg">
+        <label>Squawk<input type="checkbox" data-check="showSquawk"><i></i></label>
+        <label>Reg<input type="checkbox" data-check="showReg"><i></i></label>
+        <label>Type<input type="checkbox" data-check="showType"><i></i></label>
+        <label>Speed<input type="checkbox" data-check="showSpd"><i></i></label>
+      </div>
+    </div>
+  </details>
+
+  <details class="app-sec" open>
+    <summary>DISPLAY</summary>
+    <div class="app-sb">
+      <div class="app-tg">
+        <label>Vector<input type="checkbox" data-check="showVector"><i></i></label>
+        <label>Trail<input type="checkbox" data-check="showTrail"><i></i></label>
+        <label>History line<input type="checkbox" data-check="showHistory"><i></i></label>
+        <label>Rings<input type="checkbox" data-check="showRings"><i></i></label>
+      </div>
+      <div class="app-fl">VECTOR</div>
+      <div class="app-chips" data-select="vectorMins"><button data-v="0.5">0.5 min</button><button data-v="1">1 min</button><button data-v="2">2 min</button><button data-v="3">3 min</button></div>
+      <div class="app-fl">TRAIL</div>
+      <div class="app-chips" data-select="trailLenSec"><button data-v="30">30 s</button><button data-v="60">1 min</button><button data-v="120">2 min</button></div>
+    </div>
+  </details>
+
+  <details class="app-sec">
+    <summary>MAP</summary>
+    <div class="app-sb">
+      <div class="app-tg" id="appLayers">
+        <label>Coastline<input type="checkbox" data-ovcat="Coastlines"><i></i></label>
+        <label>Water<input type="checkbox" data-ovcat="Hydro"><i></i></label>
+        <label>Airport<input type="checkbox" data-ovcat="Airports"><i></i></label>
+        <label>Borders<input type="checkbox" data-ovcat="Borders"><i></i></label>
+        <label>FIR<input type="checkbox" data-ovcat="FIR"><i></i></label>
+        <label>ATS routes<input type="checkbox" data-ovcat="ATS"><i></i></label>
+      </div>
+      <div class="app-fl">DETAIL</div>
+      <div class="app-chips" data-select="overlayDecimate"><button data-v="1">Full</button><button data-v="2">1/2</button><button data-v="3">1/3</button></div>
+      <div class="app-muted">Navaids and waypoints: later.</div>
+    </div>
+  </details>
+
+  <details class="app-sec">
+    <summary>THEME</summary>
+    <div class="app-sb">
+      <div class="app-chips" data-select="themeSelect"><button data-v="gray">Gray (ATC)</button><button data-v="green">Green (EL)</button><button data-v="full-el">Full EL</button><button data-v="full-el-yellow">Full EL yellow</button></div>
+    </div>
+  </details>
+
+  <details class="app-sec">
+    <summary>ALTIMETER</summary>
+    <div class="app-sb">
+      <div class="app-tg app-tg1"><label>Auto QNH (EFHK METAR)<input type="checkbox" data-check="qnhAuto"><i></i></label></div>
+      <div class="app-muted" id="appQnh"></div>
+    </div>
+  </details>
+
+  <details class="app-sec">
+    <summary>GENERAL</summary>
+    <div class="app-sb">
+      <div class="app-tg app-tg1"><label>Keep the screen on<input type="checkbox" id="appWake"><i></i></label></div>
+      <a class="app-link" href="/">Full version (desktop page) ↗</a>
+      <button type="button" class="app-link" id="appReset">Reset the app's settings</button>
+    </div>
+  </details>
+  <div class="app-foot">RADAR {{ version }} · © Otso Laakso / OH2GAX<br>Data: own receiver via MODE-S Wind. Not for navigation or ATC.</div>
+</nav>
+
+<!-- the desktop controls, hidden: radar.js reads and drives them -->
+<div id="appControls" hidden>
+  {% include "_side.html" %}
+</div>
+
+<script src="/static/js/topsky.js?v={{ asset_tag }}"></script>
+<script src="/static/js/radar.js?v={{ asset_tag }}"></script>
+<script src="/static/js/app.js?v={{ asset_tag }}"></script>
+</body>
+</html>

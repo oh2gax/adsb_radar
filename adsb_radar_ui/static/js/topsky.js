@@ -11,7 +11,7 @@
  */
 const Topsky = (() => {
   const LH = 13;                         // line height, px (12 px font)
-  const HIT_PX = 10;                     // the mouse within 10 px of the symbol
+  const HIT_PX = window.RADAR_HIT_PX || 10;   // the mouse within 10 px of the symbol (a finger: more, /app)
   const POLL_MS = 2000;
   // 8 directions (NE first), each near (22 px) and far (44 px) = 16 label positions
   const DIRS = [[1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1]];
@@ -203,8 +203,16 @@ const Topsky = (() => {
         }
       }
     }
-    function nearest() {
-      let best = null, bd = HIT_PX;
+    function labelAt() {                     // the label under the pointer (a finger taps the label)
+      const rs = opts.rects() || {};
+      for (const k of Object.keys(rs)) {
+        const R = rs[k];
+        if (mx >= R.x - 4 && mx <= R.x + R.w + 4 && my >= R.y - 3 && my <= R.y + R.h + 2) return k;
+      }
+      return null;
+    }
+    function nearest(maxPx) {
+      let best = null, bd = Math.min(maxPx || HIT_PX, HIT_PX);
       for (const [k, x, y] of opts.targets()) {
         const d = Math.hypot(x - mx, y - my);
         if (d <= bd) { bd = d; best = k; }
@@ -216,6 +224,7 @@ const Topsky = (() => {
       return !!R && mx >= R.x - 4 && mx <= R.x + R.w + 4 && my >= R.y - 3 && my <= R.y + R.h + 2;
     }
     canvas.addEventListener('mousemove', e => {
+      if (window.RADAR_NO_HOVER) return;     // a touch screen (/app): no hover, a tap selects
       const r = canvas.getBoundingClientRect();
       mx = e.clientX - r.left; my = e.clientY - r.top;
       if (!opts.active() || (opts.busy && opts.busy())) { if (hov) { hov = null; watch(); } if (!(opts.busy && opts.busy())) canvas.style.cursor = ''; return; }
@@ -228,9 +237,14 @@ const Topsky = (() => {
       if (!opts.active()) return;
       const r = canvas.getBoundingClientRect();
       mx = e.clientX - r.left; my = e.clientY - r.top;
-      const k = nearest();
-      if (k) sel = (k === sel) ? null : k;     // click an aircraft: select it / click again: release
-      else if (!onLabel(sel)) sel = null;      // click on empty scope: release (its own label: keep)
+      // on a symbol: select it / again: release; else on a label: select that aircraft (its own: keep);
+      // else the nearest symbol within HIT_PX; else empty scope: release
+      const close = nearest(12);
+      const lab = close ? null : labelAt();
+      const k = close || (lab ? null : nearest());
+      if (lab) sel = lab;
+      else if (k) sel = (k === sel) ? null : k;
+      else sel = null;
       watch();
     });
     return {

@@ -787,6 +787,30 @@ def index():
                            version=APP_VERSION,
                            asset_tag=ASSET_TAG)
 
+
+@app.route("/app")
+def mobile_app():
+    """The radar for a phone (templates/app.html, static/js/app.js, static/css/app.css): the same scope,
+    full screen, touch, every choice in one menu; its own settings in the browser."""
+    return render_template("app.html",
+                           center_lat=config.CENTER_LAT,
+                           center_lon=config.CENTER_LON,
+                           version=APP_VERSION,
+                           asset_tag=ASSET_TAG)
+
+
+@app.route("/app.webmanifest")
+def app_manifest():
+    """Add to Home Screen: opens /app full screen like an app."""
+    man = {"name": "RADAR", "short_name": "RADAR", "description": "ADS-B radar around EFHK",
+           "start_url": "/app", "scope": "/app", "display": "standalone", "orientation": "any",
+           "background_color": "#cfcfcf", "theme_color": "#cfcfcf",
+           "icons": [{"src": f"/static/icons/app-192.png?v={ASSET_TAG}", "sizes": "192x192", "type": "image/png"},
+                     {"src": f"/static/icons/app-512.png?v={ASSET_TAG}", "sizes": "512x512", "type": "image/png"},
+                     {"src": f"/static/icons/app-512.png?v={ASSET_TAG}", "sizes": "512x512", "type": "image/png",
+                      "purpose": "maskable"}]}
+    return Response(json.dumps(man), mimetype="application/manifest+json")
+
 def _json_response(obj):
     """JSON, gzip-compressed when the browser accepts it (the aircraft list is asked every second:
     about 60 kB with 150 aircraft, 8 kB compressed)."""

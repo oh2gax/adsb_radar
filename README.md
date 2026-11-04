@@ -30,6 +30,9 @@ top-left logo; nothing has to be edited by hand.
 - **EFHK traffic** window: landings and departures (ARR / DEP / BOTH, 1 h – 1 d) with runway and
   go-arounds, read from MODE-S Wind's database and completed with the radar's own detection;
   click a row to draw that flight's track
+- **Mobile app** at `/app`: the same scope full screen with touch (drag, pinch, tap), a ☰ menu
+  in ATC Gray (labels, vector / trail / history line, map lines, theme, Auto QNH), EFHK traffic and
+  METAR & TAF pages, own position from the phone's GPS, Add to Home Screen; its own settings
 - **Go-around alarm**: a red GA after the callsign (flashing 60 s, then steady until the landing),
   from the radar's own EFHK go-around / landing / departure detection (`movements.py`)
 - **History line** of the selected aircraft: its whole current flight from the radar's own
@@ -130,6 +133,19 @@ minute when standing still) — about 85 bytes a point, 6–8 MB per 100 aircraf
 busy day around EFHK is some tens of MB. A flight ends after
 20 minutes without positions. The file is written every 3 s and cleaned every hour.
 
+## Mobile app (`/app`)
+
+`templates/app.html`, `static/js/app.js`, `static/css/app.css`. The scope is the desktop one
+(`radar.js` / `topsky.js`): the desktop sidebar (`templates/_side.html`, shared by both pages) is
+included hidden, `radar.js` reads and drives its controls, and the app's menu sets them — so a fix
+or feature of the scope is in both. The app's settings are kept apart: on `/app` every localStorage
+key is stored as `m.<key>` (phone defaults on the first start: TopSky, 20 NM, history line on,
+coastline / water / airport / FIR lines). Touch: pointer events on the canvas (one finger moves,
+two pinch-zoom around the fingers); `RADAR_HIT_PX = 24` (finger), `RADAR_NO_HOVER` (no hover
+labels), `RADAR_OWN_SCALE = 2` (the GPS position marker). `◎` uses the Geolocation API (HTTPS),
+*Keep the screen on* the Screen Wake Lock API. `/app.webmanifest` and `static/icons/` for
+Add to Home Screen. The desktop page has a *Mobile version* link; there is no redirect.
+
 ## EFHK movements (go-around alarm)
 
 `movements.py` follows every aircraft within 30 NM of EFHK below 5000 ft on each update
@@ -166,6 +182,7 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 
 | Endpoint | Returns |
 |---|---|
+| `/app`, `/app.webmanifest` | the mobile app and its web-app manifest |
 | `/api/aircraft` | targets, `feed_age`, `error`, `feed_lost`, `version` |
 | `/api/navaids?clat=&clon=&nmr=` | airports / navaids / waypoints within `nmr` NM |
 | `/api/overlays_meta`, `/api/overlay/<name>?dec=2` | line overlays (GeoJSON in `data/overlays`), one whole layer, gzip, cacheable |
