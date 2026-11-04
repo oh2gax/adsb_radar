@@ -955,6 +955,7 @@ let overlayDecimate = parseInt(localStorage.getItem('overlayDecimate') || '2', 1
 
 function overlayCategory(name){
   const n=(name||'').toLowerCase();
+  if(n.includes('approach')) return 'Approach';        // EFHK final approach lines (efhk_approach)
   if(n.includes('coast')||n.includes('shore')) return 'Coastlines';
   if(n.includes('ils')) return 'ILS';
   if(n.includes('apt')||n.includes('airport')) return 'Airports';
@@ -1049,7 +1050,8 @@ function drawOverlays(g, w, h, cx, cy, R){
   g.save(); g.strokeStyle = colors.navaid || colors.text || '#666';
   for(const nm of names){
     const L = overlayData[nm], lower = nm.toLowerCase();
-    if(lower.includes('ils')){ g.setLineDash([6,4]); g.lineWidth = 1; }
+    if(lower.includes('approach')){ g.setLineDash([4,4]); g.lineWidth = 1; }   // as MODE-S Wind's ATC map
+    else if(lower.includes('ils')){ g.setLineDash([6,4]); g.lineWidth = 1; }
     else if(lower.includes('coast') || lower.includes('shore')){ g.setLineDash([]); g.lineWidth = 1.2; }
     else if(lower.includes('border') || lower.includes('fir')){ g.setLineDash([3,3]); g.lineWidth = 1; }
     else { g.setLineDash([]); g.lineWidth = 1; }
@@ -1069,6 +1071,32 @@ function drawOverlays(g, w, h, cx, cy, R){
     g.stroke();
   }
   g.restore();
+}
+
+// The EFHK approach lines (when shown) keep the TopSky labels clear, as in MODE-S Wind's ATC map:
+// the leading aircraft on a final would otherwise put its label straight ahead, over the line.
+// Only the part inside the canvas is used.
+function approachObstacles(w, h, cx, cy, R, out){
+  const nm = 'efhk_approach', L = overlayData[nm];
+  if(!L || !overlayLayers[nm] || !overlayLayers[nm].checked) return;
+  const ky = 60 * R / rangeNm, kx = ky * Math.cos(center.lat * Math.PI / 180);
+  for(const a of L.segs){
+    for(let k = 0; k + 3 < a.length; k += 2){
+      let x1 = cx + (a[k+1] - center.lon) * kx, y1 = cy - (a[k] - center.lat) * ky;
+      let x2 = cx + (a[k+3] - center.lon) * kx, y2 = cy - (a[k+2] - center.lat) * ky;
+      // clip to the canvas (Liang-Barsky)
+      let t0 = 0, t1 = 1; const dx = x2 - x1, dy = y2 - y1;
+      let ok = true;
+      for(const [p, q] of [[-dx, x1], [dx, w - x1], [-dy, y1], [dy, h - y1]]){
+        if(p === 0){ if(q < 0){ ok = false; break; } continue; }
+        const r = q / p;
+        if(p < 0){ if(r > t1){ ok = false; break; } if(r > t0) t0 = r; }
+        else { if(r < t0){ ok = false; break; } if(r < t1) t1 = r; }
+      }
+      if(!ok) continue;
+      Topsky.lineObstacles(x1 + dx * t0, y1 + dy * t0, x1 + dx * t1, y1 + dy * t1, out);
+    }
+  }
 }
 
 // Selected-altitude helpers (labels and traffic list)
@@ -1190,6 +1218,7 @@ function drawScope(){
       const r = el.getBoundingClientRect();
       tsObst.push({x: r.left - c.left - 4, y: r.top - c.top - 4, w: r.width + 8, h: r.height + 8});
     }
+    approachObstacles(w, h, cx, cy, R, tsObst);
   }
   const ranges = icaoRanges;
   const posList = [];

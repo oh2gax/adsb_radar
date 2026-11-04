@@ -45,7 +45,8 @@ top-left logo; nothing has to be edited by hand.
   lines and automatic anti-overlap, as in MODE-S Wind's ATC display; the aircraft under the
   mouse or a clicked one shows the six-line extended label with IAS, TAS, Mach, magnetic
   heading, drift, roll, wind, temperature and NACp from MODE-S Wind's Beast feed
-- Airports, navaids, waypoints and line overlays (coast, FIR, ATS routes, ILS, …)
+- Airports, navaids, waypoints and line overlays (coast, FIR, ATS routes, ILS, EFHK approach lines, …);
+  `data/overlays/efhk_approach.geojson` = the EFHK finals from MODE-S Wind's `overlays/efhk_ils.geojson`
 - Four themes, label overlap avoidance, ICAO24 hex range filter, traffic list with links
 - "FEED LOST" warning when the feed stops; targets are cleared after 30 s
 - All viewer settings are kept in the browser (localStorage); "Reset UI" clears them

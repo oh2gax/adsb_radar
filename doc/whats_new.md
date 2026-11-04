@@ -15,6 +15,7 @@ sub-bullets indented by two spaces) or plain paragraphs. **bold**, *italic* and
   - The menu: label style Classic / TopSky and what the labels show, vector, trail and history line, the map lines (coastline, water, airport, borders, FIR, ATS routes), the theme, Auto QNH, and *Keep the screen on*. The theme button in the bar steps through the themes.
   - **EFHK traffic** and **METAR & TAF** open as their own pages; a tap on a traffic row shows that flight's track on the scope.
   - The app keeps its own settings: changing something on the phone does not change the desktop page, and *Reset* in the app clears only the app's.
+- **EFHK approach lines** — the final approaches of all six runways (04L / 04R / 22L / 22R / 15 / 33) as dashed extended centrelines, 15 NM out with a gap at every 5 NM, as on MODE-S Wind's ATC map. Switch them on in the app's *Map → Approach lines*, or on the desktop under *Overlays → Approach*. TopSky labels keep clear of them.
 - **Select by the label** — with TopSky labels a click (or a tap) on an aircraft's label now selects that aircraft too.
 - **History line on / off** — *Labels & Navaids → History line* (on by default).
 - **Go-around alarm** — when an aircraft goes around at EFHK, a red **GA** appears after its callsign in the label (TopSky and Classic): flashing for the first minute, then steady until it lands (or leaves the area, at most 30 minutes). A touch-and-go counts as a go-around too.
