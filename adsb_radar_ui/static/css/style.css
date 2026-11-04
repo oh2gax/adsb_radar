@@ -235,9 +235,9 @@ body.theme-full-el .whatsnew-link, body.theme-full-el-yellow .whatsnew-link { co
 /* Own position: a value that is not a valid coordinate */
 .controls input.invalid { border-color: #ff2d2d !important; }
 
-/* Zoom buttons inside the scope (top right), see-through in the radar's own colours */
+/* Zoom buttons inside the scope (top left, under the range text), see-through in the radar's own colours */
 .stage { overflow: hidden; }
-body .stage .overlayBtns { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 6px; z-index: 5; }
+body .stage .overlayBtns { position: absolute; top: 30px; left: 10px; display: flex; flex-direction: column; gap: 6px; z-index: 5; }
 body .stage .overlayBtns .btn { width: 30px; height: 30px; padding: 0; font-size: 18px; line-height: 1;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: transparent;
   color: var(--radar-text); border: 1px solid var(--radar-text); border-radius: 4px; opacity: 0.45; cursor: pointer; }

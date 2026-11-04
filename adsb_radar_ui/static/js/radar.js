@@ -357,13 +357,10 @@ function drawOwnPosition(cx, cy, R, obst){
   const pr = projectNm(ownPos.lat, ownPos.lon);
   const x = cx + (pr.x / rangeNm) * R, y = cy - (pr.y / rangeNm) * R;
   ctx.save();
-  setStroke(colors.symbol); setFill(colors.symbol); ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI*2); ctx.stroke();           // circle with a cross
-  ctx.beginPath(); ctx.moveTo(x-9, y); ctx.lineTo(x-5, y); ctx.moveTo(x+5, y); ctx.lineTo(x+9, y);
-  ctx.moveTo(x, y-9); ctx.lineTo(x, y-5); ctx.moveTo(x, y+5); ctx.lineTo(x, y+9); ctx.stroke();
-  ctx.beginPath(); ctx.arc(x, y, 1.3, 0, Math.PI*2); ctx.fill();
+  setStroke(colors.symbol); ctx.lineWidth = 1.5; ctx.lineJoin = 'miter';
+  ctx.beginPath(); ctx.moveTo(x, y-5); ctx.lineTo(x+4.5, y+3.5); ctx.lineTo(x-4.5, y+3.5); ctx.closePath(); ctx.stroke();   // small triangle
   ctx.restore();
-  if(obst) obst.push({x: x-10, y: y-10, w: 20, h: 20});
+  if(obst) obst.push({x: x-7, y: y-7, w: 14, h: 13});
 }
 
 // Utils
@@ -843,7 +840,7 @@ function drawScope(){
   window.labelBoxes = [];
   const ts = labelStyle === 'topsky' && typeof Topsky !== 'undefined' && tsUi;
   const tsItems = [], tsObst = [], tsTargets = [];
-  if(ts) tsObst.push({x: w - 48, y: 4, w: 44, h: 76});   // the zoom buttons in the top-right corner
+  if(ts) tsObst.push({x: 4, y: 24, w: 44, h: 80});      // the zoom buttons in the top-left corner
   const ranges = icaoRanges;
   const posList = [];
   const now = Date.now();

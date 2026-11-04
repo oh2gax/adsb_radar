@@ -14,8 +14,8 @@ sub-bullets indented by two spaces) or plain paragraphs. **bold**, *italic* and
   - Click an aircraft to keep its extended label open; click it again or click the empty scope to close it.
   - The air data come from the aircraft's own Mode S replies (Comm-B), received by MODE-S Wind's receiver and decoded here; wind and temperature are averaged over the last minute. A value not heard for 20 s shows as `---`.
 - **What's new** — this window: the link under the logo shows the changes of the latest versions. A small dot after the link marks a version you have not opened yet.
-- **Zoom buttons on the scope** — **+** and **−** are now see-through buttons in the top-right corner of the scope (clearer on hover); the empty strip under the scope is gone.
-- **Own position** — tick *Show* in the new *Own position* box and enter your latitude and longitude in decimal degrees (e.g. 60.2500, 24.8500); a small marker shows it on the scope. Remembered in this browser.
+- **Zoom buttons on the scope** — **+** and **−** are now see-through buttons in the top-left corner of the scope, under the range (clearer on hover); the empty strip under the scope is gone.
+- **Own position** — tick *Show* in the new *Own position* box and enter your latitude and longitude in decimal degrees (e.g. 60.2500, 24.8500); a small triangle marks it on the scope. Remembered in this browser.
 
 ## v.03112026 — Auto QNH, registrations from MODE-S Wind, many fixes
 
