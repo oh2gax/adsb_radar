@@ -23,6 +23,9 @@ top-left logo; nothing has to be edited by hand.
   selected altitude, ground speed, registration and type, speed vector and trail
 - Registration / type from BaseStation.sqb, completed from aircraft_ref.db (tar1090-db)
   when the feed has none — the files MODE-S Wind keeps up to date every morning
+- **What's new** link under the logo: the notes of the ten newest versions in a window over
+  the scope (`doc/whats_new.md`)
+- **Own position**: a small marker at a position entered in decimal degrees
 - Auto QNH from the latest METAR (default EFHK) for altitudes below 5000 ft
 - Label style **Classic** (the original labels) or **TopSky (ATC)**: three-line labels
   (callsign / level, trend and selected level / speed in tens of kt and type) with leader
@@ -60,8 +63,10 @@ it rolls back to the previous commit by itself. Hand edits made on the server ar
 ### Development workflow
 
 1. Edit and test locally (`bash adsb_radar_ui/run_beta.sh`, or `python app_beta.py`)
-2. Commit and push to `main`
-3. On the server: `cd ~/adsb_radar && bash update.sh`, answer `y`; the logo shows the new version
+2. Add a short user-oriented note to `doc/whats_new.md` under `## v.DDMMYYYY — title`
+   (one section per day; newest first) — it appears in the What's new window
+3. Commit and push to `main`
+4. On the server: `cd ~/adsb_radar && bash update.sh`, answer `y`; the logo shows the new version
 
 ## Configuration (environment variables)
 
@@ -113,6 +118,7 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 | `/api/navaids?clat=&clon=&nmr=` | airports / navaids / waypoints within `nmr` NM |
 | `/api/overlays_meta`, `/api/overlays_fetch` | line overlays (GeoJSON in `data/overlays`) |
 | `/api/qnh` | latest METAR and QNH |
+| `/api/whatsnew` | the ten newest versions of `doc/whats_new.md` |
 | `/api/ac/<hex>` | Comm-B / EHS values of one aircraft (TopSky extended label) |
 | `/api/ehs_status` | Beast feed reader: connected, messages, aircraft with Comm-B |
 
@@ -120,4 +126,5 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 
 - `adsb_radar_ui/` – the application (Flask app, static files, data)
 - `deploy/` – reference systemd unit
+- `doc/` – `whats_new.md`, the notes of the What's new window
 - `tmp_files/` – local scratch folder, not in git

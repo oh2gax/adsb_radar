@@ -794,6 +794,49 @@ def api_qnh():
                         "error": _metar["error"]})
 
 
+# --- What's new (doc/whats_new.md) ---
+# "## v.DDMMYYYY — title" starts a version; the lines under it (bullets / paragraphs) are
+# sent as they are and rendered in the browser. Read again only when the file changes.
+WHATS_NEW_PATH = os.path.join(os.path.dirname(BASE_DIR), "doc", "whats_new.md")
+_whats_new = {"mtime": None, "entries": []}
+
+
+def _whats_new_entries():
+    try:
+        mt = os.path.getmtime(WHATS_NEW_PATH)
+    except OSError:
+        return []
+    if mt != _whats_new["mtime"]:
+        out, cur = [], None
+        try:
+            with open(WHATS_NEW_PATH, encoding="utf-8") as fh:
+                lines = fh.read().splitlines()
+        except OSError:
+            lines = []
+        for line in lines:
+            m = re.match(r"^##\s+(v\.\d{8})\s*(?:[\u2014-]\s*(.*))?$", line.strip())
+            if m:
+                cur = {"version": m.group(1), "title": (m.group(2) or "").strip(), "lines": []}
+                out.append(cur)
+            elif cur is not None:
+                cur["lines"].append(line.rstrip())
+        for e in out:
+            while e["lines"] and not e["lines"][-1].strip():
+                e["lines"].pop()
+            while e["lines"] and not e["lines"][0].strip():
+                e["lines"].pop(0)
+            d = e["version"][2:]
+            e["date"] = f"{d[4:]}-{d[2:4]}-{d[:2]}"
+        out.sort(key=lambda e: e["date"], reverse=True)       # newest first, whatever the file order
+        _whats_new.update({"mtime": mt, "entries": out})
+    return _whats_new["entries"]
+
+
+@app.route("/api/whatsnew")
+def api_whatsnew():
+    return jsonify({"version": APP_VERSION, "entries": _whats_new_entries()[:10]})
+
+
 @app.route("/api/ac/<icao>")
 def api_ac(icao):
     """Comm-B / EHS values of one aircraft for the TopSky extended label (polled every 2 s

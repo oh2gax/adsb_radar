@@ -200,3 +200,46 @@ body.theme-full-el .sq.emg { color: inherit; font-weight: inherit; }
 /* Status line warning (feed lost / server unreachable); mono EL themes keep their single color */
 #status.warn { color: #ff2d2d !important; font-weight: 700; }
 body.theme-full-el #status.warn, body.theme-full-el-yellow #status.warn { color: inherit !important; }
+
+/* What's new link under the logo; the dot marks a version not opened yet in this browser */
+.whatsnew-link { display: inline-block; margin-top: 4px; font-size: 11px; letter-spacing: 0; color: var(--muted); text-decoration: underline; cursor: pointer; }
+.whatsnew-link:hover { color: var(--accent); }
+.whatsnew-link:focus { outline: none; }
+.whatsnew-dot { display: inline-block; width: 6px; height: 6px; margin-left: 5px; border-radius: 50%; background: #ff2d2d; vertical-align: middle; }
+.whatsnew-dot[hidden] { display: none; }
+body.theme-full-el .whatsnew-dot, body.theme-full-el-yellow .whatsnew-dot { background: var(--radar-ring); }
+body.theme-full-el .whatsnew-link, body.theme-full-el-yellow .whatsnew-link { color: var(--radar-ring); }
+
+/* What's new window over the scope, in the radar's own colours (ATC style: plain frame + text) */
+.wn-window { position: absolute; top: 36px; left: 50%; transform: translateX(-50%); width: min(680px, calc(100% - 40px));
+  max-height: calc(100% - 72px); display: flex; flex-direction: column; background: var(--radar-bg); color: var(--radar-text);
+  border: 1px solid var(--radar-text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px; line-height: 1.45; z-index: 20; box-shadow: 0 0 0 1px var(--radar-bg); }
+.wn-window[hidden] { display: none; }
+.wn-window .wn-head { display: flex; justify-content: space-between; align-items: center; padding: 5px 10px;
+  border-bottom: 1px solid var(--radar-text); letter-spacing: 2px; font-weight: 700; }
+.wn-window .wn-close { background: none; border: none; color: var(--radar-text); font: inherit; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.wn-window .wn-body { overflow-y: auto; padding: 4px 12px 10px; scrollbar-color: var(--radar-ring) transparent; }
+.wn-window .wn-entry { padding: 8px 0 6px; border-bottom: 1px solid var(--radar-ring); }
+.wn-window .wn-entry:last-child { border-bottom: none; }
+.wn-window h3 { margin: 0 0 2px; font-size: 13px; display: flex; gap: 14px; align-items: baseline; }
+.wn-window .wn-date { font-weight: 400; }
+.wn-window .wn-current { font-size: 10px; font-weight: 700; padding: 0 5px; border: 1px solid var(--radar-text); }
+.wn-window .wn-etitle { font-weight: 700; margin-bottom: 3px; }
+.wn-window ul { margin: 2px 0 4px; padding-left: 16px; list-style: none; }
+.wn-window li { margin: 2px 0; position: relative; }
+.wn-window li::before { content: "-"; position: absolute; left: -12px; }
+.wn-window p { margin: 4px 0; }
+.wn-window code { font-family: inherit; border: 1px solid var(--radar-ring); padding: 0 3px; }
+
+/* Own position: a value that is not a valid coordinate */
+.controls input.invalid { border-color: #ff2d2d !important; }
+
+/* Zoom buttons inside the scope (top right), see-through in the radar's own colours */
+.stage { overflow: hidden; }
+body .stage .overlayBtns { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 6px; z-index: 5; }
+body .stage .overlayBtns .btn { width: 30px; height: 30px; padding: 0; font-size: 18px; line-height: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: transparent;
+  color: var(--radar-text); border: 1px solid var(--radar-text); border-radius: 4px; opacity: 0.45; cursor: pointer; }
+body .stage .overlayBtns .btn:hover { opacity: 1; filter: none; }
+

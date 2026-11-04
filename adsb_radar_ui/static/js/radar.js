@@ -322,6 +322,50 @@ if(applyCenterBtn){
   };
 }
 
+// --- Own position: a small marker at the user's position (decimal degrees), kept in this browser ---
+const ownPos = {
+  on: localStorage.getItem('ownPosOn') === '1',
+  lat: parseFloat(localStorage.getItem('ownLat') ?? 'NaN'),
+  lon: parseFloat(localStorage.getItem('ownLon') ?? 'NaN'),
+};
+(function(){
+  const cb = document.getElementById('ownPosOn');
+  const la = document.getElementById('ownLatInput');
+  const lo = document.getElementById('ownLonInput');
+  const btn = document.getElementById('applyOwnPos');
+  if(!cb || !la || !lo) return;
+  if(Number.isFinite(ownPos.lat)) la.value = String(ownPos.lat);
+  if(Number.isFinite(ownPos.lon)) lo.value = String(ownPos.lon);
+  cb.checked = ownPos.on;
+  // returns true when both fields hold a valid coordinate (and stores it)
+  function take(){
+    const v1 = parseFloat(String(la.value).replace(',', '.')), v2 = parseFloat(String(lo.value).replace(',', '.'));
+    const ok1 = Number.isFinite(v1) && v1 >= -90 && v1 <= 90, ok2 = Number.isFinite(v2) && v2 >= -180 && v2 <= 180;
+    la.classList.toggle('invalid', !ok1); lo.classList.toggle('invalid', !ok2);
+    if(!(ok1 && ok2)) return false;
+    ownPos.lat = v1; ownPos.lon = v2;
+    localStorage.setItem('ownLat', String(v1)); localStorage.setItem('ownLon', String(v2));
+    return true;
+  }
+  function setOn(on){ ownPos.on = on; cb.checked = on; localStorage.setItem('ownPosOn', on ? '1' : '0'); }
+  if(btn) btn.onclick = () => { if(take()) setOn(true); };
+  for(const el of [la, lo]) el.addEventListener('keydown', e => { if(e.key === 'Enter' && take()) setOn(true); });
+  cb.onchange = () => { setOn(cb.checked && (Number.isFinite(ownPos.lat) && Number.isFinite(ownPos.lon) ? true : take())); };
+})();
+function drawOwnPosition(cx, cy, R, obst){
+  if(!ownPos.on || !Number.isFinite(ownPos.lat) || !Number.isFinite(ownPos.lon)) return;
+  const pr = projectNm(ownPos.lat, ownPos.lon);
+  const x = cx + (pr.x / rangeNm) * R, y = cy - (pr.y / rangeNm) * R;
+  ctx.save();
+  setStroke(colors.symbol); setFill(colors.symbol); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI*2); ctx.stroke();           // circle with a cross
+  ctx.beginPath(); ctx.moveTo(x-9, y); ctx.lineTo(x-5, y); ctx.moveTo(x+5, y); ctx.lineTo(x+9, y);
+  ctx.moveTo(x, y-9); ctx.lineTo(x, y-5); ctx.moveTo(x, y+5); ctx.lineTo(x, y+9); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, 1.3, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+  if(obst) obst.push({x: x-10, y: y-10, w: 20, h: 20});
+}
+
 // Utils
 function parseRanges(str){
   if(!str) return [];
@@ -799,6 +843,7 @@ function drawScope(){
   window.labelBoxes = [];
   const ts = labelStyle === 'topsky' && typeof Topsky !== 'undefined' && tsUi;
   const tsItems = [], tsObst = [], tsTargets = [];
+  if(ts) tsObst.push({x: w - 48, y: 4, w: 44, h: 76});   // the zoom buttons in the top-right corner
   const ranges = icaoRanges;
   const posList = [];
   const now = Date.now();
@@ -967,6 +1012,7 @@ if(isTypeOn() && ac.type){ infoParts.push(ac.type); } /*TYPE_AFTER_REG*/
 
   // Draw navaids last (on top)
   drawNavaidsLayer(cx, cy, R, ts ? tsObst : null);
+  drawOwnPosition(cx, cy, R, ts ? tsObst : null);
 
   // TopSky labels over everything (topsky.js)
   if(ts){

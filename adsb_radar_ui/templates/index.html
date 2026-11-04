@@ -10,7 +10,7 @@
 <body>
   <div id="app">
     <aside class="side">
-      <div class="logo">RADAR {{ version }}<div class="copyright">© Otso Laakso / OH2GAX / New! Reg & Type fields added. MLAT used now for position calculations if needed.</div></div>
+      <div class="logo">RADAR {{ version }}<div class="copyright">© Otso Laakso / OH2GAX</div><a href="#" id="whatsNewLink" class="whatsnew-link" data-version="{{ version }}" title="Changes of the latest versions">What's new<span id="whatsNewDot" class="whatsnew-dot" hidden></span></a></div>
       <div class="block">
         <div class="label">Center</div>
         <div class="value" id="centerReadout">{{ '%.4f' % center_lat }}, {{ '%.4f' % center_lon }}</div>
@@ -21,6 +21,15 @@
           <label>Lat <input id="centerLatInput" type="number" step="0.0001" style="width:110px;"></label>
           <label>Lon <input id="centerLonInput" type="number" step="0.0001" style="width:110px;"></label>
           <button class="btn" id="applyCenter">Apply</button>
+        </div>
+      </div>
+      <div class="block">
+        <div class="label">Own position</div>
+        <div class="controls" style="flex-wrap:wrap; gap:8px;">
+          <label>Lat <input id="ownLatInput" type="number" step="any" min="-90" max="90" placeholder="60.2500" style="width:110px;"></label>
+          <label>Lon <input id="ownLonInput" type="number" step="any" min="-180" max="180" placeholder="24.8500" style="width:110px;"></label>
+          <button class="btn" id="applyOwnPos">Apply</button>
+          <label title="Show a small marker at your own position"><input type="checkbox" id="ownPosOn"> Show</label>
         </div>
       </div>
       <div class="block">
@@ -191,9 +200,13 @@
     </aside>
     <main class="stage">
       <canvas id="radarCanvas"></canvas>
+      <div id="wnWindow" class="wn-window" role="dialog" aria-label="What's new" hidden>
+        <div class="wn-head"><span>WHAT'S NEW</span><button id="wnClose" class="wn-close" type="button" title="Close (Esc)">&times;</button></div>
+        <div id="wnBody" class="wn-body">Loading…</div>
+      </div>
       <div class="overlayBtns">
-        <button class="btn" id="btnZoomIn">+</button>
-        <button class="btn" id="btnZoomOut">-</button>
+        <button class="btn" id="btnZoomIn" title="Zoom in (smaller range)">+</button>
+        <button class="btn" id="btnZoomOut" title="Zoom out (larger range)">&minus;</button>
       </div>
     </main>
   </div>
@@ -202,5 +215,6 @@
   </script>
   <script src="/static/js/topsky.js?v={{ asset_tag }}"></script>
   <script src="/static/js/radar.js?v={{ asset_tag }}"></script>
+  <script src="/static/js/whatsnew.js?v={{ asset_tag }}"></script>
 </body>
 </html>

@@ -1,0 +1,36 @@
+# What's new in RADAR
+
+Short notes for users of the radar, newest first. Each version is one day of
+development (v.DDMMYYYY). The window under the logo shows the ten newest versions.
+
+Format: a version starts with `## v.DDMMYYYY — title`; under it bullets (`- `,
+sub-bullets indented by two spaces) or plain paragraphs. **bold**, *italic* and
+`code` are shown as such.
+
+## v.04112026 — TopSky labels with an extended label, What's new, own position, zoom buttons on the scope
+
+- **TopSky label style** — *Labels & Navaids → Label style: TopSky (ATC)* draws the labels as on a controller's radar display: callsign / level, trend and selected level (`032↓030`) / ground speed in tens of knots and type (`21 A320`), with a leader line. The labels move by themselves so that they do not cover each other, the aircraft, the vectors, the trails or the navaid names, and they keep their place while it stays free. An emergency squawk is shown in red after the callsign. *Classic* keeps the original labels.
+- **Extended label** — with TopSky labels, move the mouse over an aircraft to see six lines: callsign, type and registration; level, selected level, vertical rate and autopilot / approach mode; GS, TAS, IAS and Mach; magnetic heading, magnetic track, drift and roll; wind with its head / tail and cross components, and the outside air temperature; distance and bearing from the radar centre, NACp and squawk.
+  - Click an aircraft to keep its extended label open; click it again or click the empty scope to close it.
+  - The air data come from the aircraft's own Mode S replies (Comm-B), received by MODE-S Wind's receiver and decoded here; wind and temperature are averaged over the last minute. A value not heard for 20 s shows as `---`.
+- **What's new** — this window: the link under the logo shows the changes of the latest versions. A small dot after the link marks a version you have not opened yet.
+- **Zoom buttons on the scope** — **+** and **−** are now see-through buttons in the top-right corner of the scope (clearer on hover); the empty strip under the scope is gone.
+- **Own position** — tick *Show* in the new *Own position* box and enter your latitude and longitude in decimal degrees (e.g. 60.2500, 24.8500); a small marker shows it on the scope. Remembered in this browser.
+
+## v.03112026 — Auto QNH, registrations from MODE-S Wind, many fixes
+
+- **Auto QNH** — *Altimeter → Auto* takes the QNH from the latest EFHK METAR (refreshed every 10 minutes); the METAR time is shown under it, and the whole METAR when you hover over it. Untick *Auto* to set the QNH by hand.
+- **Registration and type for nearly every aircraft** — from MODE-S Wind's aircraft database, which is updated every morning, completed from the tar1090 database (about 620 000 aircraft) when an aircraft is missing.
+- **Feed lost is shown** — when the data stop, the status line turns red; after 30 s the old targets are cleared and it says *FEED LOST*, so the scope never shows frozen aircraft as live.
+- **Faster start** — the page loads only the airports, navaids and waypoints within the navaid range (16 kB instead of 10 MB).
+- **Trails stay in place** — after zooming, moving the centre or resizing the window the trails stay behind their aircraft.
+- **Map lines no longer vanish** — when zoomed in, coastlines, routes and borders that cross the view are drawn in full; after *Manual Center* the lines follow the new centre.
+- **Traffic list** — a click on a callsign opens one tab (not two), and clicks are no longer lost while the list updates.
+- **ICAO24 filter** — ranges can be separated by spaces as well as commas.
+- **Timeouts** — *Off* in *Stale timeout* and *Position-loss timeout* really switches them off; a stale aircraft is also removed from the traffic list.
+- **Version number** — the logo shows the version as a date, v.DDMMYYYY.
+
+## v.12022026 — RADAR v9.0.0 Beta
+
+- **Registration and type fields** — shown in the labels and the traffic list, from the feed or the BaseStation.sqb database.
+- **MLAT positions** — used for the position when an aircraft sends no ADS-B position.
