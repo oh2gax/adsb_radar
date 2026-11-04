@@ -24,6 +24,8 @@ _USE_MSW = os.path.isdir(_MSW_DATA)
 REG_DB_PATH = os.environ.get("REG_DB_PATH") or (
     os.path.join(_MSW_DATA, "BaseStation.sqb") if _USE_MSW else os.path.join(_BASE_DIR, "data", "BaseStation.sqb"))
 REF_DB_PATH = os.environ.get("REF_DB_PATH", os.path.join(_MSW_DATA, "aircraft_ref.db") if _USE_MSW else "")
+# MODE-S Wind's main database: EFHK landings and departures for the EFHK traffic window (read-only)
+MSW_DB_PATH = os.environ.get("MSW_DB_PATH", os.path.join(_MSW_DATA, "modes_meteo.db") if _USE_MSW else "")
 
 # After this many seconds without a good feed read, targets are cleared and "feed lost" is shown
 FEED_STALE_SECONDS = float(os.environ.get("FEED_STALE_SECONDS", "30"))

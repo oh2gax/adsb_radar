@@ -27,6 +27,9 @@ top-left logo; nothing has to be edited by hand.
   the scope (`doc/whats_new.md`)
 - **Own position**: a small triangle at a position entered in decimal degrees
 - **METAR & TAF** window for any airport (EFHK by default): movable, resizable, remembered
+- **EFHK traffic** window: landings and departures (ARR / DEP / BOTH, 1 h – 1 d) with runway and
+  go-arounds, read from MODE-S Wind's database; click a row to point at the aircraft
+- Move the map by dragging it; ⌂ returns to the default centre
 - Auto QNH from the latest METAR (default EFHK) for altitudes below 5000 ft
 - Label style **Classic** (the original labels) or **TopSky (ATC)**: three-line labels
   (callsign / level, trend and selected level / speed in tens of kt and type) with leader
@@ -79,6 +82,7 @@ it rolls back to the previous commit by itself. Hand edits made on the server ar
 | `CENTER_LAT` / `CENTER_LON` | 60.3172 / 24.9633 | default radar center (EFHK) |
 | `REG_DB_PATH` | `~/mode_s_wind/data/BaseStation.sqb` | registration database (read-only) |
 | `REF_DB_PATH` | `~/mode_s_wind/data/aircraft_ref.db` | tar1090-db reference data; empty = off |
+| `MSW_DB_PATH` | `~/mode_s_wind/data/modes_meteo.db` | MODE-S Wind's database for the EFHK traffic window (read-only) |
 | `METAR_STATION` | EFHK | Auto QNH station |
 | `METAR_URL` | NOAA tgftp `{icao}.TXT` | METAR source (same as MODE-S Wind) |
 | `TAF_URL` | NOAA tgftp `forecasts/taf/stations/{icao}.TXT` | TAF source (same as MODE-S Wind) |
@@ -120,6 +124,7 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 | `/api/navaids?clat=&clon=&nmr=` | airports / navaids / waypoints within `nmr` NM |
 | `/api/overlays_meta`, `/api/overlays_fetch` | line overlays (GeoJSON in `data/overlays`) |
 | `/api/qnh` | latest METAR and QNH (Auto QNH, `METAR_STATION`) |
+| `/api/efhk_traffic?kind=both&hours=3` | EFHK landings / departures from MODE-S Wind (kind arr/dep/both, hours 1/3/6/12/24) |
 | `/api/wx?icao=EFHK` | METAR and TAF of one airport (cached 10 min, shared by all viewers) |
 | `/api/whatsnew` | the ten newest versions of `doc/whats_new.md` |
 | `/api/ac/<hex>` | Comm-B / EHS values of one aircraft (TopSky extended label) |

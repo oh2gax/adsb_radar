@@ -176,6 +176,12 @@
         </div>
       </div>
       <div class="block">
+        <div class="label">EFHK traffic</div>
+        <div class="controls">
+          <label title="Landings and departures at EFHK (from MODE-S Wind) in a window on the scope"><input type="checkbox" id="trOn"> Show arrivals &amp; departures</label>
+        </div>
+      </div>
+      <div class="block">
         <div class="label">ICAO24 filter (hex ranges)</div>
         <div class="controls">
           <textarea id="icaoFilter" placeholder="e.g. 600000-6FFFFF, 7C0000-7FFFFF"></textarea>
@@ -216,9 +222,19 @@
         <div class="wn-head wx-head" title="Drag to move; resize from the lower-right corner"><span id="wxTitle">METAR &amp; TAF</span><button id="wxClose" class="wn-close" type="button" title="Close">&times;</button></div>
         <div id="wxBody" class="wn-body">Loading…</div>
       </div>
+      <div id="trWindow" class="atc-window tr-window" role="dialog" aria-label="EFHK traffic" hidden>
+        <div class="wn-head tr-head" title="Drag to move; resize from the lower-right corner"><span>EFHK TRAFFIC</span><button id="trClose" class="wn-close" type="button" title="Close">&times;</button></div>
+        <div class="tr-bar">
+          <span class="tr-seg"><button type="button" data-kind="arr" title="Arrivals">ARR</button><button type="button" data-kind="dep" title="Departures">DEP</button><button type="button" data-kind="both" title="Arrivals and departures">BOTH</button></span>
+          <span class="tr-seg"><button type="button" data-hours="1">1h</button><button type="button" data-hours="3">3h</button><button type="button" data-hours="6">6h</button><button type="button" data-hours="12">12h</button><button type="button" data-hours="24">1d</button></span>
+        </div>
+        <div id="trCount" class="tr-count"></div>
+        <div id="trBody" class="wn-body tr-body">Loading…</div>
+      </div>
       <div class="overlayBtns">
         <button class="btn" id="btnZoomIn" title="Zoom in (smaller range)">+</button>
         <button class="btn" id="btnZoomOut" title="Zoom out (larger range)">&minus;</button>
+        <button class="btn" id="btnHome" title="Back to the default centre (EFHK). Drag the map to move it.">&#8962;</button>
       </div>
     </main>
   </div>
@@ -228,6 +244,8 @@
   <script src="/static/js/topsky.js?v={{ asset_tag }}"></script>
   <script src="/static/js/radar.js?v={{ asset_tag }}"></script>
   <script src="/static/js/whatsnew.js?v={{ asset_tag }}"></script>
+  <script src="/static/js/atcwin.js?v={{ asset_tag }}"></script>
   <script src="/static/js/wx.js?v={{ asset_tag }}"></script>
+  <script src="/static/js/traffic.js?v={{ asset_tag }}"></script>
 </body>
 </html>

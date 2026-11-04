@@ -242,8 +242,53 @@ function tsLvl3(alt){
   const adj = correctedAltFt(Number(alt));
   return String(Math.max(0, Math.round((adj < 5000 ? adj : Number(alt)) / 100))).padStart(3,'0');
 }
+// --- Pointing at an aircraft from outside (EFHK traffic window): a blinking ring for 6 s,
+// and with TopSky labels the aircraft is selected (its extended label stays open) ---
+let flashHex = null, flashUntil = 0;
+window.radarHasAircraft = hex => {
+  const a = aircraft.get(String(hex || '').toUpperCase());
+  return !!a && Number.isFinite(a.lat) && Number.isFinite(a.lon);
+};
+window.radarSelect = hex => {
+  hex = String(hex || '').toUpperCase();
+  flashHex = hex; flashUntil = Date.now() + 6000;
+  if(labelStyle === 'topsky' && tsUi) tsUi.select(hex);
+};
+// --- Move the map by dragging it with the mouse (a click without moving still selects) ---
+let mapDrag = null;          // {x, y, lat, lon, moved} while the mouse button is down on the scope
+let mapJustDragged = false;  // swallow the click that ends a drag
+function scopeRadiusPx(){ const w = canvas.width / DPR, h = canvas.height / DPR; return Math.min(w, h) / 2 - 24; }
+canvas.addEventListener('mousedown', e => {
+  if(e.button !== 0) return;
+  mapJustDragged = false;     // a drag that ended outside the scope left no click to swallow
+  mapDrag = {x: e.clientX, y: e.clientY, lat: center.lat, lon: center.lon, moved: false};
+});
+document.addEventListener('mousemove', e => {
+  if(!mapDrag) return;
+  const dx = e.clientX - mapDrag.x, dy = e.clientY - mapDrag.y;
+  if(!mapDrag.moved && Math.hypot(dx, dy) < 4) return;          // a small wobble is still a click
+  mapDrag.moved = true;
+  canvas.style.cursor = 'grabbing';
+  const nmPerPx = rangeNm / Math.max(10, scopeRadiusPx());
+  const la = mapDrag.lat + (dy * nmPerPx) / 60;
+  const lo = mapDrag.lon - (dx * nmPerPx) / (60 * Math.cos(la * Math.PI / 180));
+  setCenter(la, lo, false);
+});
+document.addEventListener('mouseup', () => {
+  if(!mapDrag) return;
+  if(mapDrag.moved){ mapJustDragged = true; canvas.style.cursor = ''; setCenter(center.lat, center.lon, true); }
+  mapDrag = null;
+});
+canvas.addEventListener('click', e => {           // capture: before the TopSky click handling
+  if(mapJustDragged){ mapJustDragged = false; e.stopImmediatePropagation(); }
+}, true);
+// the home button (⌂) under the zoom buttons: back to the default centre (EFHK)
+const btnHome = document.getElementById('btnHome');
+if(btnHome) btnHome.onclick = () => setCenter(window.RADAR_CENTER.lat, window.RADAR_CENTER.lon, true);
+
 const tsUi = (typeof Topsky !== 'undefined') ? Topsky.interaction(canvas, {
   active: () => labelStyle === 'topsky',
+  busy: () => !!(mapDrag && mapDrag.moved),
   targets: () => tsTargetsLast,
   rects: () => tsRects,
 }) : null;
@@ -313,14 +358,20 @@ if(applyCenterBtn){
   applyCenterBtn.onclick = () => {
     const la = parseFloat(centerLatInput.value);
     const lo = parseFloat(centerLonInput.value);
-    if(Number.isFinite(la) && Number.isFinite(lo)){
-      center.lat = la; center.lon = lo;
-      localStorage.setItem('centerLat', String(la));
-      localStorage.setItem('centerLon', String(lo));
-      if(centerReadoutEl) centerReadoutEl.textContent = `${la.toFixed(4)}, ${lo.toFixed(4)}`;
-      fetchNavaids(); fetchNavMeta(); requestOverlayFetch();
-    }
+    if(Number.isFinite(la) && Number.isFinite(lo)) setCenter(la, lo, true);
   };
+}
+// Centre of the scope: Manual Center, dragging the map, the home (⌂) button.
+// reload = fetch the navaids and map lines for the new centre (after a drag: once, at the end).
+function setCenter(la, lo, reload){
+  la = Math.max(-85, Math.min(85, la)); lo = ((lo + 540) % 360) - 180;
+  center.lat = la; center.lon = lo;
+  localStorage.setItem('centerLat', String(la));
+  localStorage.setItem('centerLon', String(lo));
+  if(centerReadoutEl) centerReadoutEl.textContent = `${la.toFixed(4)}, ${lo.toFixed(4)}`;
+  if(centerLatInput) centerLatInput.value = la.toFixed(4);
+  if(centerLonInput) centerLonInput.value = lo.toFixed(4);
+  if(reload){ fetchNavaids(); fetchNavMeta(); requestOverlayFetch(); }
 }
 
 // --- Own position: a small marker at the user's position (decimal degrees), kept in this browser ---
@@ -842,11 +893,13 @@ function drawScope(){
   const ts = labelStyle === 'topsky' && typeof Topsky !== 'undefined' && tsUi;
   const tsItems = [], tsObst = [], tsTargets = [];
   if(ts){
-    tsObst.push({x: 4, y: 24, w: 44, h: 80});           // the zoom buttons in the top-left corner
-    const wxw = document.getElementById('wxWindow');      // the METAR & TAF window
-    if(wxw && !wxw.hidden){
-      const c = canvas.getBoundingClientRect(), r = wxw.getBoundingClientRect();
-      tsObst.push({x: r.left - c.left - 4, y: r.top - c.top - 4, w: r.width + 8, h: r.height + 8});
+    tsObst.push({x: 4, y: 24, w: 44, h: 116});          // the zoom and home buttons in the top-left corner
+    for(const id of ['wxWindow', 'trWindow']){           // the METAR & TAF and EFHK traffic windows
+      const el = document.getElementById(id);
+      if(el && !el.hidden){
+        const c = canvas.getBoundingClientRect(), r = el.getBoundingClientRect();
+        tsObst.push({x: r.left - c.left - 4, y: r.top - c.top - 4, w: r.width + 8, h: r.height + 8});
+      }
     }
   }
   const ranges = icaoRanges;
@@ -901,6 +954,9 @@ function drawScope(){
 
     // Symbol (unfilled square)
     ctx.save(); ctx.translate(px, py); setStroke(colors.symbol); ctx.lineWidth=1.5; ctx.strokeRect(-5,-5,10,10); ctx.restore();
+    if(ac.hex === flashHex && now < flashUntil && Math.floor(now / 400) % 2 === 0){
+      setStroke(colors.symbol); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(px, py, 13, 0, Math.PI*2); ctx.stroke();
+    }
 
     // Vector
     let vectorBB = null; let vectorQuad = null;

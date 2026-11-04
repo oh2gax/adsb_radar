@@ -185,7 +185,7 @@ const Topsky = (() => {
     canvas.addEventListener('mousemove', e => {
       const r = canvas.getBoundingClientRect();
       mx = e.clientX - r.left; my = e.clientY - r.top;
-      if (!opts.active()) { if (hov) { hov = null; watch(); } canvas.style.cursor = ''; return; }
+      if (!opts.active() || (opts.busy && opts.busy())) { if (hov) { hov = null; watch(); } if (!(opts.busy && opts.busy())) canvas.style.cursor = ''; return; }
       const k = onLabel(hov) ? hov : nearest();
       canvas.style.cursor = k ? 'pointer' : '';
       if (k !== hov) { hov = k; watch(); }
@@ -202,6 +202,7 @@ const Topsky = (() => {
     });
     return {
       hover: () => hov, selected: () => sel, data: k => data[k] || null,
+      select: k => { sel = k || null; watch(); },      // from outside (EFHK traffic window rows)
       clear: () => { hov = sel = null; watch(); },
       forget: present => {           // aircraft gone from the feed
         if (hov && !present.has(hov)) hov = null;

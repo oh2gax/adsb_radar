@@ -1,7 +1,7 @@
 
 import os, re, time, threading, csv, sys, json, socket, subprocess, sqlite3, urllib.request
 from datetime import datetime
-from math import radians, cos
+from math import radians, cos, sin
 from urllib.request import pathname2url
 from flask import Flask, jsonify, render_template, request, abort
 from overlays import register_overlays
@@ -834,6 +834,107 @@ def api_wx():
                     "metar_time": _obs_time(e["metar"]), "taf_time": _obs_time(e["taf"]),
                     "metar_age": age(e["metar_ok_ts"]), "taf_age": age(e["taf_ok_ts"]),
                     "metar_error": e["metar_err"], "taf_error": e["taf_err"]})
+
+
+# --- EFHK traffic: landings and departures from MODE-S Wind's database ---
+# MODE-S Wind (same machine) records every EFHK landing (approach_history: runway, go-arounds)
+# and the departures whose climb it measured (departure_profiles; a departure with fewer than
+# three altitude bands of Comm-B data is not stored there, so a few are missing). Read-only.
+EFHK_RUNWAYS = [   # from MODE-S Wind collector/windshear.py
+    ("04L", 47, 60.3129, 24.9039), ("04R", 47, 60.3113, 24.9364),
+    ("22L", 227, 60.3307, 24.9791), ("22R", 227, 60.3311, 24.9439),
+    ("15", 152, 60.3303, 24.9645), ("33", 323, 60.3071, 24.9883),
+]
+TRAFFIC_HOURS = (1, 3, 6, 12, 24)
+TRAFFIC_CACHE_SEC = 30
+_msw_db = _ReadOnlyDb("MODE-S Wind database", config.MSW_DB_PATH)
+_msw_lock = threading.Lock()
+_traffic_cache = {}
+
+
+def _dep_runway(lat, lon, track):
+    """Runway of a climb-out from its first position and initial track (as MODE-S Wind):
+    the runway of that direction (within 25 deg) whose extended centreline is nearest (<= 1 NM)."""
+    if lat is None or lon is None or track is None:
+        return None
+    best = None
+    for name, hdg, tlat, tlon in EFHK_RUNWAYS:
+        if abs(((track - hdg) + 540.0) % 360.0 - 180.0) > 25.0:
+            continue
+        # cross-track distance from the runway's centreline (flat earth, a few NM)
+        dn = (lat - tlat) * 60.0
+        de = (lon - tlon) * 60.0 * cos(radians(tlat))
+        xt = abs(-dn * sin(radians(hdg)) + de * cos(radians(hdg)))
+        if xt <= 1.0 and (best is None or xt < best[0]):
+            best = (xt, name)
+    return best[1] if best else None
+
+
+def _efhk_traffic(kind, hours):
+    since = time.time() - hours * 3600
+    rows = []
+    with _msw_lock:
+        conn = _msw_db.get()
+        _msw_db.changed = False
+        if conn is None:
+            raise FileNotFoundError("MODE-S Wind database not found")
+        if kind in ("arr", "both"):
+            for r in conn.execute(
+                    "SELECT ts, icao, callsign, registration, aircraft_type, runway, go_arounds "
+                    "FROM approach_history WHERE ts >= ? ORDER BY ts DESC LIMIT 3000", (since,)):
+                rows.append({"t": r[0], "kind": "arr", "icao": r[1], "callsign": r[2], "reg": r[3],
+                             "type": r[4], "rwy": r[5], "ga": r[6] or 0})
+        if kind in ("dep", "both"):
+            for r in conn.execute(
+                    "SELECT ts, t_start, icao, callsign, registration, aircraft_type, track, lat, lon, shear_json "
+                    "FROM departure_profiles WHERE ts >= ? AND ga = 0 ORDER BY ts DESC LIMIT 3000", (since,)):
+                t = r[1] or r[0]
+                if t < since:
+                    continue
+                rwy = None
+                try:
+                    sh = json.loads(r[9]) if r[9] else None
+                    rwy = sh.get("rwy") if isinstance(sh, dict) else None
+                except ValueError:
+                    pass
+                rows.append({"t": t, "kind": "dep", "icao": r[2], "callsign": r[3], "reg": r[4], "type": r[5],
+                             "rwy": rwy or _dep_runway(r[7], r[8], r[6]), "ga": 0})
+    for row in rows:
+        row["icao"] = (row["icao"] or "").upper()
+        row["callsign"] = (row["callsign"] or "").strip() or None
+        if not row["reg"] or not row["type"]:
+            reg, typ = lookup_meta(row["icao"])
+            row["reg"], row["type"] = row["reg"] or reg, row["type"] or typ
+        row["t"] = round(row["t"])
+    rows.sort(key=lambda x: x["t"], reverse=True)
+    return rows
+
+
+@app.route("/api/efhk_traffic")
+def api_efhk_traffic():
+    """EFHK landings / departures of the last 1-24 h, newest first (?kind=arr|dep|both&hours=1|3|6|12|24)."""
+    kind = request.args.get("kind", "both")
+    kind = kind if kind in ("arr", "dep", "both") else "both"
+    try:
+        hours = int(request.args.get("hours", "3"))
+    except ValueError:
+        hours = 3
+    hours = hours if hours in TRAFFIC_HOURS else 3
+    key, now = (kind, hours), time.time()
+    hit = _traffic_cache.get(key)
+    if hit and now - hit[0] < TRAFFIC_CACHE_SEC:
+        return jsonify(hit[1])
+    try:
+        rows = _efhk_traffic(kind, hours)
+        out = {"kind": kind, "hours": hours, "now": round(now), "rows": rows,
+               "arr": sum(1 for r in rows if r["kind"] == "arr"), "dep": sum(1 for r in rows if r["kind"] == "dep"),
+               "error": None}
+    except Exception as e:
+        msg = str(e) if isinstance(e, FileNotFoundError) else f"MODE-S Wind database: {e}"
+        _reg_log(f"[traffic] {msg}", "traffic")
+        out = {"kind": kind, "hours": hours, "now": round(now), "rows": [], "arr": 0, "dep": 0, "error": msg}
+    _traffic_cache[key] = (now, out)
+    return jsonify(out)
 
 
 # --- What's new (doc/whats_new.md) ---

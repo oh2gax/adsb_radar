@@ -251,6 +251,26 @@ body.theme-full-el .whatsnew-link, body.theme-full-el-yellow .whatsnew-link { co
 .wx-window .wx-old { color: #ff2d2d; }
 body.theme-full-el .wx-window .wx-old, body.theme-full-el-yellow .wx-window .wx-old { color: inherit; text-decoration: underline; }
 
+/* EFHK traffic: right side under the METAR & TAF window by default; move / resize as above */
+.tr-window { top: 260px; right: 10px; width: 470px; height: 330px; min-width: 340px; min-height: 150px; resize: both; overflow: hidden; }
+.tr-window .tr-head { cursor: move; user-select: none; }
+.tr-window .tr-bar { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 7px 10px 2px; flex: none; }
+.tr-window .tr-seg { display: inline-flex; }
+.tr-window .tr-seg button { font: inherit; font-size: 11px; background: transparent; color: var(--radar-text); border: 1px solid var(--radar-text);
+  padding: 1px 7px; margin-right: -1px; cursor: pointer; }
+.tr-window .tr-seg button.on { background: var(--radar-text); color: var(--radar-bg); }
+.tr-window .tr-count { padding: 3px 10px 3px; opacity: 0.8; flex: none; }
+.tr-window .tr-body { flex: 1 1 auto; padding-top: 0; }
+.tr-window .tr-table { border-collapse: collapse; width: 100%; }
+.tr-window .tr-table th { position: sticky; top: 0; background: var(--radar-bg); text-align: left; font-weight: 700;
+  padding: 3px 10px 3px 0; border-bottom: 1px solid var(--radar-ring); }
+.tr-window .tr-table td { padding: 1px 10px 1px 0; white-space: nowrap; }
+.tr-window .tr-table td.tr-ga { font-weight: 700; }
+.tr-window .tr-table tr.live { cursor: pointer; }
+.tr-window .tr-table tr.live td.tr-cs { text-decoration: underline dotted; }
+.tr-window .tr-table tr.live:hover td { text-decoration: underline; }
+.tr-window .tr-table tr.tr-day td { text-align: center; opacity: 0.75; padding: 5px 0 2px; }
+
 /* the ICAO box of METAR & TAF (a text input; the theme rules above style number inputs) */
 .controls input.icao-input { width: 70px; padding: 6px; text-transform: uppercase; background: #111; color: var(--text); border: 1px solid #444; border-radius: 4px; }
 body.theme-gray .controls input.icao-input { background: var(--radar-bg); color: #000; border: 1px solid #000; }
