@@ -6,7 +6,7 @@ TCP_PORT = int(os.environ.get("ADSB_TCP_PORT", "31009"))
 
 CENTER_LAT = float(os.environ.get("CENTER_LAT", "60.3172"))
 CENTER_LON = float(os.environ.get("CENTER_LON", "24.9633"))
-POLL_SECONDS = int(os.environ.get("POLL_SECONDS", "3"))
+POLL_SECONDS = int(os.environ.get("POLL_SECONDS", "1"))   # the browser asks every second too
 
 # Web server. 127.0.0.1 = reachable only through nginx on the same machine.
 HOST = os.environ.get("HOST", "127.0.0.1")

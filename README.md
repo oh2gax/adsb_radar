@@ -29,7 +29,8 @@ top-left logo; nothing has to be edited by hand.
 - **METAR & TAF** window for any airport (EFHK by default): movable, resizable, remembered
 - **EFHK traffic** window: landings and departures (ARR / DEP / BOTH, 1 h – 1 d) with runway and
   go-arounds, read from MODE-S Wind's database; click a row to point at the aircraft
-- Move the map by dragging it; ⌂ returns to the default centre
+- Move the map by dragging it, zoom with the mouse wheel (2–400 NM); ⌂ returns to the default centre
+- Aircraft updated every second; map lines loaded once and drawn from a cached background layer
 - Auto QNH from the latest METAR (default EFHK) for altitudes below 5000 ft
 - Label style **Classic** (the original labels) or **TopSky (ATC)**: three-line labels
   (callsign / level, trend and selected level / speed in tens of kt and type) with leader
@@ -78,7 +79,7 @@ it rolls back to the previous commit by itself. Hand edits made on the server ar
 |---|---|---|
 | `ADSB_TCP_HOST` / `ADSB_TCP_PORT` | 127.0.0.1 / 31009 | JSON feed |
 | `HOST` / `PORT` | 127.0.0.1 / 5300 | web server address |
-| `POLL_SECONDS` | 3 | feed poll interval |
+| `POLL_SECONDS` | 1 | feed poll interval (the browser asks every second too) |
 | `CENTER_LAT` / `CENTER_LON` | 60.3172 / 24.9633 | default radar center (EFHK) |
 | `REG_DB_PATH` | `~/mode_s_wind/data/BaseStation.sqb` | registration database (read-only) |
 | `REF_DB_PATH` | `~/mode_s_wind/data/aircraft_ref.db` | tar1090-db reference data; empty = off |
@@ -122,7 +123,7 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 |---|---|
 | `/api/aircraft` | targets, `feed_age`, `error`, `feed_lost`, `version` |
 | `/api/navaids?clat=&clon=&nmr=` | airports / navaids / waypoints within `nmr` NM |
-| `/api/overlays_meta`, `/api/overlays_fetch` | line overlays (GeoJSON in `data/overlays`) |
+| `/api/overlays_meta`, `/api/overlay/<name>?dec=2` | line overlays (GeoJSON in `data/overlays`), one whole layer, gzip, cacheable |
 | `/api/qnh` | latest METAR and QNH (Auto QNH, `METAR_STATION`) |
 | `/api/efhk_traffic?kind=both&hours=3` | EFHK landings / departures from MODE-S Wind (kind arr/dep/both, hours 1/3/6/12/24) |
 | `/api/wx?icao=EFHK` | METAR and TAF of one airport (cached 10 min, shared by all viewers) |

@@ -7,7 +7,7 @@ Format: a version starts with `## v.DDMMYYYY — title`; under it bullets (`- `,
 sub-bullets indented by two spaces) or plain paragraphs. **bold**, *italic* and
 `code` are shown as such.
 
-## v.04112026 — TopSky labels with an extended label, EFHK traffic and METAR & TAF windows, move the map with the mouse, What's new, own position
+## v.04112026 — TopSky labels with an extended label, EFHK traffic and METAR & TAF windows, move and zoom the map with the mouse, 1-second updates, What's new, own position
 
 - **TopSky label style** — *Labels & Navaids → Label style: TopSky (ATC)* draws the labels as on a controller's radar display: callsign / level, trend and selected level (`032↓030`) / ground speed in tens of knots and type (`21 A320`), with a leader line. The labels move by themselves so that they do not cover each other, the aircraft, the vectors, the trails or the navaid names, and they keep their place while it stays free. An emergency squawk is shown in red after the callsign. *Classic* keeps the original labels.
 - **Extended label** — with TopSky labels, move the mouse over an aircraft to see six lines: callsign, type and registration; level, selected level, vertical rate and autopilot / approach mode; GS, TAS, IAS and Mach; magnetic heading, magnetic track, drift and roll; wind with its head / tail and cross components, and the outside air temperature; distance and bearing from the radar centre, NACp and squawk.
@@ -19,6 +19,9 @@ sub-bullets indented by two spaces) or plain paragraphs. **bold**, *italic* and
   - Click a row of an aircraft that is on the scope (dotted underline) to make it blink; with TopSky labels its extended label opens.
   - The window opens on the right under the METAR & TAF window; move and resize it like that one. Your choices are remembered.
 - **Move the map with the mouse** — drag the scope to move the centre; a plain click still selects an aircraft. The new **⌂** button under **+** / **−** brings the centre back to EFHK. The centre is remembered, as with *Manual Center*.
+- **Zoom with the mouse wheel** — the place under the mouse stays where it is, from 2 NM to 400 NM. **+** / **−** go in 10 NM steps above 10 NM and halve / double below.
+- **Faster, smoother map** — the map lines are loaded once (compressed, kept by the browser) and appear at once; while you drag or zoom the picture moves with the mouse and is redrawn sharp several times a second. When nothing changes the scope is redrawn only a few times a second, so the page uses far less of the computer.
+- **Updates every second** — the aircraft are now updated every second (before every 5 s); a position is at most about 2–3 s old.
 - **What's new** — this window: the link under the logo shows the changes of the latest versions. A small dot after the link marks a version you have not opened yet.
 - **Zoom buttons on the scope** — **+** and **−** are now see-through buttons in the top-left corner of the scope, under the range (clearer on hover); the empty strip under the scope is gone.
 - **Own position** — tick *Show* in the new *Own position* box and enter your latitude and longitude in decimal degrees (e.g. 60.2500, 24.8500); a small triangle marks it on the scope (light grey in the Gray theme). Remembered in this browser.

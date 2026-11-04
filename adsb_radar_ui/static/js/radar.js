@@ -88,6 +88,12 @@ let showRings = (localStorage.getItem('showRings') ?? '1') === '1';
 let ringSpacing = localStorage.getItem('ringSpacing') || 'auto';
 
 const FT_PER_HPA = 27;
+let drawDirty = true;
+function requestDraw(){ drawDirty = true; }
+window.requestDraw = requestDraw;
+// any change in the side panel or a window redraws at once
+for(const ev of ['input', 'change', 'click', 'keyup']) document.addEventListener(ev, requestDraw, true);
+window.addEventListener('resize', () => { resizeCanvas(); markStaticDirty(); });
 let icaoRanges = [];  // parsed ICAO24 filter, set after parseRanges is defined
 let aircraft = new Map();
 let trails = new Map();
@@ -153,7 +159,7 @@ if(centerLonInput) centerLonInput.value = Number(center.lon).toFixed(4);
 if(centerReadoutEl) centerReadoutEl.textContent = `${Number(center.lat).toFixed(4)}, ${Number(center.lon).toFixed(4)}`;
 
 // Init control values
-if(rangeInput) rangeInput.value = rangeNm;
+if(rangeInput) rangeInput.value = fmtRange(rangeNm);
 if(icaoFilterTA) icaoFilterTA.value = localStorage.getItem('icaoRanges') || '';
 if(showCallsignCb) showCallsignCb.checked = showCallsign;
 if(showAltCb) showAltCb.checked = showAlt;
@@ -210,11 +216,19 @@ function savePrefs(){
 }
 
 // Handlers
-if(zoomInBtn) zoomInBtn.onclick = () => { rangeNm = Math.max(10, rangeNm - 10); if(rangeInput) rangeInput.value = rangeNm; savePrefs(); try{requestOverlayFetch()}catch(_e){}; };
-if(zoomOutBtn) zoomOutBtn.onclick = () => { rangeNm = Math.min(400, rangeNm + 10); if(rangeInput) rangeInput.value = rangeNm; savePrefs(); try{requestOverlayFetch()}catch(_e){}; };
+// Zoom: 10 NM steps above 10 NM, halving / doubling below (the mouse wheel zooms smoothly, 2-400 NM)
+const RANGE_MIN = 2, RANGE_MAX = 400;
+function setRange(r, save){
+  rangeNm = Math.max(RANGE_MIN, Math.min(RANGE_MAX, r));
+  if(rangeInput) rangeInput.value = fmtRange(rangeNm);
+  requestDraw();
+  if(save !== false) savePrefs();
+}
+if(zoomInBtn) zoomInBtn.onclick = () => setRange(rangeNm > 10 ? Math.max(10, Math.round(rangeNm - 10)) : rangeNm / 2);
+if(zoomOutBtn) zoomOutBtn.onclick = () => setRange(rangeNm < 10 ? Math.min(10, rangeNm * 2) : Math.round(rangeNm + 10));
 if(btnZoomIn) btnZoomIn.onclick = () => zoomInBtn && zoomInBtn.onclick();
 if(btnZoomOut) btnZoomOut.onclick = () => zoomOutBtn && zoomOutBtn.onclick();
-if(rangeInput) rangeInput.onchange = () => { rangeNm = Math.max(5, Math.min(400, parseFloat(rangeInput.value) || 20)); rangeInput.value = rangeNm; savePrefs(); try{requestOverlayFetch()}catch(e){} };
+if(rangeInput) rangeInput.onchange = () => setRange(parseFloat(rangeInput.value) || 20);
 if(showCallsignCb) showCallsignCb.onchange = () => { showCallsign = showCallsignCb.checked; savePrefs(); };
 if(showAltCb) showAltCb.onchange = () => { showAlt = showAltCb.checked; savePrefs(); };
 if(showHdgCb) showHdgCb.onchange = () => { showHdg = showHdgCb.checked; savePrefs(); };
@@ -282,6 +296,28 @@ document.addEventListener('mouseup', () => {
 canvas.addEventListener('click', e => {           // capture: before the TopSky click handling
   if(mapJustDragged){ mapJustDragged = false; e.stopImmediatePropagation(); }
 }, true);
+// --- Mouse-wheel zoom around the pointer: the place under the mouse stays where it is ---
+let wheelUntil = 0, wheelSaveTimer = null;
+function mapMoving(){ return !!(mapDrag && mapDrag.moved) || Date.now() < wheelUntil; }
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;   // lines / pages -> px
+  const f = Math.exp(Math.max(-0.5, Math.min(0.5, dy * 0.0015)));                                   // ~15 % per notch
+  const r = canvas.getBoundingClientRect();
+  const R = Math.max(10, scopeRadiusPx());
+  const ox = e.clientX - r.left - r.width / 2, oy = e.clientY - r.top - r.height / 2;            // px from the centre
+  const cosc = Math.cos(center.lat * Math.PI / 180);
+  const pLat = center.lat - (oy / R * rangeNm) / 60, pLon = center.lon + (ox / R * rangeNm) / (60 * cosc);  // under the mouse
+  setRange(rangeNm * f, false);
+  const nLat = pLat + (oy / R * rangeNm) / 60;
+  const nLon = pLon - (ox / R * rangeNm) / (60 * Math.cos(nLat * Math.PI / 180));
+  setCenter(nLat, nLon, false);
+  wheelUntil = Date.now() + 250;
+  clearTimeout(wheelSaveTimer);
+  wheelSaveTimer = setTimeout(() => { savePrefs(); setCenter(center.lat, center.lon, true); }, 300);
+}, { passive: false });
+canvas.addEventListener('mousemove', requestDraw);   // hover changes the TopSky labels
+
 // the home button (⌂) under the zoom buttons: back to the default centre (EFHK)
 const btnHome = document.getElementById('btnHome');
 if(btnHome) btnHome.onclick = () => setCenter(window.RADAR_CENTER.lat, window.RADAR_CENTER.lon, true);
@@ -366,8 +402,8 @@ if(applyCenterBtn){
 function setCenter(la, lo, reload){
   la = Math.max(-85, Math.min(85, la)); lo = ((lo + 540) % 360) - 180;
   center.lat = la; center.lon = lo;
-  localStorage.setItem('centerLat', String(la));
-  localStorage.setItem('centerLon', String(lo));
+  requestDraw();
+  if(reload){ localStorage.setItem('centerLat', String(la)); localStorage.setItem('centerLon', String(lo)); }
   if(centerReadoutEl) centerReadoutEl.textContent = `${la.toFixed(4)}, ${lo.toFixed(4)}`;
   if(centerLatInput) centerLatInput.value = la.toFixed(4);
   if(centerLonInput) centerLonInput.value = lo.toFixed(4);
@@ -494,6 +530,7 @@ function altToHTML(s){
   return escaped.replace(/\u00A0/g,'&nbsp;').replace(/\\u00A0/g,'&nbsp;');
 }
 let _trafficLastHTML = '';
+let _trafficBuildTs = 0;   // the list HTML is rebuilt at most once a second (and at once on new data)
 let _trafficLastTs = 0;
 let _trafficPointerDown = false;  // see traffic list click handling near the end
 
@@ -537,24 +574,23 @@ async function fetchData(){
       next.set(ac.hex, ac);
       count++;
       const s = acState.get(ac.hex) || {};
+      // Movement is measured from the place where the aircraft last moved (an anchor), not from the
+      // previous update, so the stationary / position-loss timeouts work the same at any update rate
+      // (a taxiing aircraft moves only a few metres between 1-second updates).
       const MOVE_THRESH_NM = 0.02; // ~37 m to ignore jitter
       if(Number.isFinite(ac.lat) && Number.isFinite(ac.lon)){
-        if(!Number.isFinite(s.lastPosLat) || !Number.isFinite(s.lastPosLon)){
-          s.lastPosLat = ac.lat; s.lastPosLon = ac.lon;
-          s.lastPosTime = now;
+        if(!Number.isFinite(s.anchorLat) || !Number.isFinite(s.anchorLon)){
+          s.anchorLat = ac.lat; s.anchorLon = ac.lon; s.anchorTime = now;
           s.lastMoveTime = now;
           s.stationarySince = now;
+        } else if(distanceNm(s.anchorLat, s.anchorLon, ac.lat, ac.lon) >= MOVE_THRESH_NM){
+          s.anchorLat = ac.lat; s.anchorLon = ac.lon; s.anchorTime = now;
+          s.lastMoveTime = now;
+          s.stationarySince = null;
         } else {
-          const dnm = distanceNm(s.lastPosLat, s.lastPosLon, ac.lat, ac.lon);
-          s.lastPosTime = now;
-          s.lastPosLat = ac.lat; s.lastPosLon = ac.lon;
-          if(dnm >= MOVE_THRESH_NM){
-            s.lastMoveTime = now;
-            s.stationarySince = null;
-          } else {
-            s.stationarySince = s.stationarySince || now;
-          }
+          s.stationarySince = s.stationarySince || s.anchorTime;
         }
+        s.lastPosLat = ac.lat; s.lastPosLon = ac.lon; s.lastPosTime = now;
       }
       acState.set(ac.hex, s);
     }
@@ -562,6 +598,7 @@ async function fetchData(){
     // forget trails of aircraft that are no longer in the feed
     for(const hex of Array.from(trails.keys())){ if(!next.has(hex)){ trails.delete(hex); trailLastSample.delete(hex); } }
     aircraft = next;
+    requestDraw(); _trafficBuildTs = 0;     // new data: redraw and rebuild the traffic list
     if(tsUi) tsUi.forget(new Set(next.keys()));
     const upd = new Date().toISOString().slice(11,19) + 'Z';
     if(j.feed_lost){
@@ -578,7 +615,8 @@ async function fetchData(){
     setStatus(`Radar server not reachable (${down} s)`, true);
   }
 }
-setInterval(fetchData, 5000); fetchData();
+const DATA_POLL_MS = 1000;                // the server reads the feed every second too (POLL_SECONDS)
+setInterval(fetchData, DATA_POLL_MS); fetchData();
 
 // Navaids: server returns only the points within navRangeNm of the current center
 async function fetchNavaids(){
@@ -601,6 +639,7 @@ async function fetchNavaids(){
       }
     }
     window.navaidsData = out;
+    window.navaidsVersion = (window.navaidsVersion || 0) + 1;
   }catch(e){}
 }
 async function fetchNavMeta(){
@@ -636,7 +675,7 @@ function setFill(c){ ctx.fillStyle = c; }
 function setStroke(c){ ctx.strokeStyle = c; }
 
 
-function drawNavaidsLayer(cx, cy, R, obst){   // obst: TopSky label obstacles (symbol + name boxes)
+function drawNavaidsLayer(g, cx, cy, R, obst){   // g: the static layer; obst: TopSky label obstacles (symbol + name boxes)
   let inView = {airports:0, navaids:0, fixes:0};
   const lineW = (typeof theme!=='undefined' && theme==='gray') ? 1.6 : 1.2;
   const data = window.navaidsData || {};
@@ -645,11 +684,11 @@ function drawNavaidsLayer(cx, cy, R, obst){   // obst: TopSky label obstacles (s
     {flag: showNavaids,  key: 'navaids',  color: colors.navaid,  type:'nav'},
     {flag: showFixes,    key: 'fixes',    color: colors.fix,     type:'fix'},
   ];
-  ctx.save();
-  ctx.globalAlpha = 1.0;
-  ctx.lineWidth = lineW;
-  ctx.font = '10px ui-monospace, monospace';
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  g.save();
+  g.globalAlpha = 1.0;
+  g.lineWidth = lineW;
+  g.font = '10px ui-monospace, monospace';
+  g.textAlign = 'left'; g.textBaseline = 'middle';
   for(const ds of datasets){
     if(!ds.flag) continue;
     const arr = data[ds.key] || [];
@@ -663,16 +702,16 @@ function drawNavaidsLayer(cx, cy, R, obst){   // obst: TopSky label obstacles (s
       const py = cy - (proj.y / rangeNm) * R;
       let col = ds.color || '#00ff66';
       if(!col || col === colors.bg) col = (theme==='green'||theme==='full-el')? '#00ff66' : '#222222';
-      setStroke(col); setFill(col);
-      if(ds.type==='apt'){ ctx.beginPath(); ctx.moveTo(px, py-4); ctx.lineTo(px+4, py); ctx.lineTo(px, py+4); ctx.lineTo(px-4, py); ctx.closePath(); ctx.stroke(); ctx.fillRect(px-1, py-1, 2, 2); }
-      else if(ds.type==='nav'){ ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.arc(px, py, 2.2, 0, Math.PI*2); ctx.fill(); }
-      else { ctx.strokeRect(px-3, py-3, 6, 6); ctx.fillRect(px-3, py-3, 6, 6); }
+      g.strokeStyle = col; g.fillStyle = col;
+      if(ds.type==='apt'){ g.beginPath(); g.moveTo(px, py-4); g.lineTo(px+4, py); g.lineTo(px, py+4); g.lineTo(px-4, py); g.closePath(); g.stroke(); g.fillRect(px-1, py-1, 2, 2); }
+      else if(ds.type==='nav'){ g.beginPath(); g.arc(px, py, 3.5, 0, Math.PI*2); g.stroke(); g.beginPath(); g.arc(px, py, 2.2, 0, Math.PI*2); g.fill(); }
+      else { g.strokeRect(px-3, py-3, 6, 6); g.fillRect(px-3, py-3, 6, 6); }
       const ident = (it.ident || it.name || '').toString().trim();
-      if(ident){ ctx.fillText(ident, px+6, py); }
-      if(obst) obst.push({x: px-5, y: py-6, w: 11 + (ident ? ctx.measureText(ident).width + 2 : 0), h: 12});
+      if(ident){ g.fillText(ident, px+6, py); }
+      if(obst) obst.push({x: px-5, y: py-6, w: 11 + (ident ? g.measureText(ident).width + 2 : 0), h: 12});
     }
   }
-  ctx.restore();
+  g.restore();
   try{
     const el = document.getElementById('navMeta');
     if(el){
@@ -753,7 +792,6 @@ function candidateOrder(hdgDeg, vectorQuad){
 
 // === Overlays (lines) ===
 let overlayLayers = {};
-let overlaySegments = {};
 let overlayDecimate = parseInt(localStorage.getItem('overlayDecimate') || '2', 10);
 
 function overlayCategory(name){
@@ -803,50 +841,105 @@ async function loadOverlayMeta(){
     });
     const od=document.getElementById('overlayDecimate');
     if(od){ od.value=String(overlayDecimate); od.onchange=()=>{ overlayDecimate=parseInt(od.value,10)||2; localStorage.setItem('overlayDecimate', String(overlayDecimate)); requestOverlayFetch(); }; }
+    requestOverlayFetch();
   }catch(e){ listEl.textContent='Overlay meta load failed'; }
 }
-function requestOverlayFetch(){ clearTimeout(window._ovTimer); window._ovTimer=setTimeout(fetchOverlays,250); }
-
-// Ensure overlays fetch once on initial load (covers saved zoom/center with preselected layers)
-if(!window._ovInitKick){
-  window._ovInitKick = true;
-  try{
-    window.addEventListener('load', ()=> setTimeout(()=>{ try{ requestOverlayFetch(); }catch(_e){} }, 300));
-    document.addEventListener('DOMContentLoaded', ()=> setTimeout(()=>{ try{ requestOverlayFetch(); }catch(_e){} }, 500));
-  }catch(_e){}
-}
+// Each line layer is loaded once, whole (/api/overlay/<name>, compressed, kept by the browser for
+// this radar version), so moving and zooming never wait for the server. Stored as typed arrays
+// [lat, lon, lat, lon, ...] per line with a bounding box for skipping lines outside the view.
+let overlayData = {};            // name -> {dec, segs: [Float64Array], bbox: Float64Array(4 per line)}
+let overlayVersion = 0;          // bumped when a layer arrives (the static layer is redrawn)
+const overlayLoading = {};
+function requestOverlayFetch(){ fetchOverlays(); markStaticDirty(); }
 async function fetchOverlays(){
-  try{
-    const names=Object.entries(overlayLayers).filter(([,o])=>o.checked).map(([nm])=>nm);
-    if(!names.length){ overlaySegments={}; return; }
-    const centerStr = `${center.lat.toFixed(6)},${center.lon.toFixed(6)}`;
-    const url=`/api/overlays_fetch?names=${encodeURIComponent(names.join(','))}&center=${centerStr}&range_nm=${rangeNm}&decimate=${overlayDecimate}`;
-    const r=await fetch(url,{cache:'no-store'});
-    const j=await r.json(); if(!j.ok) throw new Error(j.error||'fetch');
-    overlaySegments=j.layers||{};
-  }catch(e){}
+  const names = Object.entries(overlayLayers).filter(([,o])=>o.checked).map(([nm])=>nm);
+  await Promise.all(names.map(async nm => {
+    const have = overlayData[nm];
+    const key = nm + '@' + overlayDecimate;
+    if((have && have.dec === overlayDecimate) || overlayLoading[key]) return;
+    overlayLoading[key] = true;
+    try{
+      const r = await fetch(`/api/overlay/${encodeURIComponent(nm)}?dec=${overlayDecimate}&v=${encodeURIComponent(window.RADAR_ASSET || '')}`);
+      const j = await r.json(); if(!j.ok) throw new Error(j.error || 'overlay');
+      const segs = [], bbox = new Float64Array(j.segments.length * 4);
+      j.segments.forEach((flat, i) => {
+        const a = Float64Array.from(flat);
+        let la1 = 90, la2 = -90, lo1 = 180, lo2 = -180;
+        for(let k = 0; k < a.length; k += 2){
+          const la = a[k], lo = a[k+1];
+          if(la < la1) la1 = la; if(la > la2) la2 = la; if(lo < lo1) lo1 = lo; if(lo > lo2) lo2 = lo;
+        }
+        bbox[i*4] = la1; bbox[i*4+1] = la2; bbox[i*4+2] = lo1; bbox[i*4+3] = lo2;
+        segs.push(a);
+      });
+      overlayData[nm] = {dec: overlayDecimate, segs, bbox};
+      overlayVersion++; markStaticDirty();
+    }catch(e){ /* try again on the next request */ }
+    finally{ delete overlayLoading[key]; }
+  }));
 }
-function drawOverlays(cx,cy,R){
-  const names=Object.keys(overlaySegments||{}); if(!names.length) return;
-  const col = colors.navaid || colors.text || '#666';
-  ctx.save(); ctx.lineWidth=1; ctx.strokeStyle=col;
+// Draw the ticked layers on g: one path per layer, lines outside the view skipped, points closer
+// than about a pixel to the previous one skipped (a big saving when zoomed out).
+function drawOverlays(g, w, h, cx, cy, R){
+  const names = Object.keys(overlayData).filter(nm => overlayLayers[nm] && overlayLayers[nm].checked);
+  if(!names.length) return;
+  const clat = center.lat, clon = center.lon, cosc = Math.cos(clat * Math.PI / 180);
+  const ky = 60 * R / rangeNm, kx = ky * cosc;          // px per degree
+  const mlat = (h / 2 + 20) / ky, mlon = (w / 2 + 20) / kx;   // view half-size in degrees (+ margin)
+  const vla1 = clat - mlat, vla2 = clat + mlat, vlo1 = clon - mlon, vlo2 = clon + mlon;
+  g.save(); g.strokeStyle = colors.navaid || colors.text || '#666';
   for(const nm of names){
-    const list=overlaySegments[nm]||[]; const lower=nm.toLowerCase();
-    if(lower.includes('ils')){ ctx.setLineDash([6,4]); ctx.lineWidth=1; }
-    else if(lower.includes('coast')||lower.includes('shore')){ ctx.setLineDash([]); ctx.lineWidth=1.2; }
-    else if(lower.includes('border')||lower.includes('fir')){ ctx.setLineDash([3,3]); ctx.lineWidth=1; }
-    else { ctx.setLineDash([]); ctx.lineWidth=1; }
-    for(const seg of list){
-      ctx.beginPath(); let first=true;
-      for(const p of seg){
-        const pr=projectNm(p[0],p[1]);
-        const x=cx+(pr.x/rangeNm)*R, y=cy-(pr.y/rangeNm)*R;
-        if(first){ ctx.moveTo(x,y); first=false; } else { ctx.lineTo(x,y); }
+    const L = overlayData[nm], lower = nm.toLowerCase();
+    if(lower.includes('ils')){ g.setLineDash([6,4]); g.lineWidth = 1; }
+    else if(lower.includes('coast') || lower.includes('shore')){ g.setLineDash([]); g.lineWidth = 1.2; }
+    else if(lower.includes('border') || lower.includes('fir')){ g.setLineDash([3,3]); g.lineWidth = 1; }
+    else { g.setLineDash([]); g.lineWidth = 1; }
+    g.beginPath();
+    const bb = L.bbox;
+    for(let i = 0; i < L.segs.length; i++){
+      if(bb[i*4+1] < vla1 || bb[i*4] > vla2 || bb[i*4+3] < vlo1 || bb[i*4+2] > vlo2) continue;
+      const a = L.segs[i], n = a.length;
+      let lx = cx + (a[1] - clon) * kx, ly = cy - (a[0] - clat) * ky;
+      g.moveTo(lx, ly);
+      for(let k = 2; k < n; k += 2){
+        const x = cx + (a[k+1] - clon) * kx, y = cy - (a[k] - clat) * ky;
+        if(k < n - 2 && Math.abs(x - lx) < 0.8 && Math.abs(y - ly) < 0.8) continue;
+        g.lineTo(x, y); lx = x; ly = y;
       }
-      ctx.stroke();
     }
+    g.stroke();
   }
-  ctx.restore();
+  g.restore();
+}
+
+// Selected-altitude helpers (labels and traffic list)
+function _selHundreds(obj){
+  try{
+    if(obj && Number.isFinite(obj.sel_alt_hundreds)) return Math.round(Number(obj.sel_alt_hundreds));
+    if(obj && Number.isFinite(obj.sel_alt_ft)){
+      var v = Number(obj.sel_alt_ft);
+      if(v >= 1000) return Math.round(v/100);
+      if(v >= 0 && v <= 600) return Math.round(v);
+    }
+  }catch(e){}
+  return null;
+}
+
+function _joinAlt(currentStr, curHundreds, selHundreds){
+  try{
+    if(!(selHundreds===0 || Number.isFinite(selHundreds))) return currentStr;
+    var s = String(currentStr);
+    while(s.length && /\s/.test(s.charAt(s.length-1))) s = s.slice(0,-1);
+    var last = s.slice(-1);
+    var sign = (last==='+'||last==='-'||last.charCodeAt(0)===8722) ? last : '';
+    var base = sign ? s.slice(0,-1) : s;
+    var code = String(Math.round(selHundreds)).padStart(3,'0');
+    if(!sign && (curHundreds===0 || Number.isFinite(curHundreds)) && Math.round(curHundreds)===Math.round(selHundreds)){
+      return base + '=' + code;
+    }
+    if(sign) return s + code;
+    return base + '-' + code;
+  }catch(e){ return currentStr; }
 }
 
 // Stale = position has not changed for the stale timeout -> removed from scope and traffic list.
@@ -854,40 +947,77 @@ function drawOverlays(cx,cy,R){
 function isStale(s, now){
   return staleTimeoutMin > 0 && !!s && !!s.stationarySince && (now - s.stationarySince) > staleTimeoutMin*60*1000;
 }
-function drawScope(){
-  const w = canvas.width / DPR;
-  const h = canvas.height / DPR;
-  ctx.clearRect(0,0,w,h);
-  setFill(colors.bg); ctx.fillRect(0,0,w,h);
-
-  const margin = 24;
-  const R = Math.min(w, h)/2 - margin;
-  const cx = w/2, cy = h/2;
-  if(!(R>10)) return;
-
+// --- The static layer: background, range rings, map lines and navaids. Drawn into
+// an off-screen canvas only when the view changes (centre, range, size, theme, layers, data), and
+// copied to the scope on every frame. The navaid boxes are kept for the TopSky label placement. ---
+const staticCv = document.createElement('canvas');
+const sctx = staticCv.getContext('2d');
+let staticKey = '', staticDirty = true, staticNavObst = [];
+let staticView = null, staticDrawnMs = 0;   // centre and range the static layer was drawn for
+const STATIC_MOVE_MS = 120;                  // while dragging / wheel-zooming: redraw the lines at most this often
+function markStaticDirty(){ staticDirty = true; requestDraw(); }
+function fmtRange(r){ return r < 10 ? (Math.round(r * 10) / 10).toString() : String(Math.round(r)); }
+function drawStatic(w, h, cx, cy, R){
+  if(staticCv.width !== canvas.width || staticCv.height !== canvas.height){ staticCv.width = canvas.width; staticCv.height = canvas.height; }
+  const g = sctx;
+  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  g.clearRect(0, 0, w, h);
+  g.fillStyle = colors.bg; g.fillRect(0, 0, w, h);
   // Rings
   if(showRings){
-    setStroke(colors.ring); ctx.lineWidth=1;
+    g.strokeStyle = colors.ring; g.lineWidth = 1;
     if(ringSpacing==='auto'){
-      for(const frac of [0.25,0.5,0.75,1]){ ctx.beginPath(); ctx.arc(cx, cy, R*frac, 0, Math.PI*2); ctx.stroke(); }
+      for(const frac of [0.25,0.5,0.75,1]){ g.beginPath(); g.arc(cx, cy, R*frac, 0, Math.PI*2); g.stroke(); }
     } else {
       let sp = parseFloat(ringSpacing);
       if(!Number.isFinite(sp) || sp <= 0) sp = 10;
       const maxRings = Math.min(40, Math.floor(rangeNm / sp));
       for(let k=1; k<=maxRings; k++){
         const frac = (k * sp) / rangeNm;
-        if(frac <= 1.0 + 1e-6){
-          ctx.beginPath(); ctx.arc(cx, cy, R*frac, 0, Math.PI*2); ctx.stroke();
-        }
+        if(frac <= 1.0 + 1e-6){ g.beginPath(); g.arc(cx, cy, R*frac, 0, Math.PI*2); g.stroke(); }
       }
     }
   }
+  drawOverlays(g, w, h, cx, cy, R);
+  staticNavObst = [];
+  drawNavaidsLayer(g, cx, cy, R, staticNavObst);
+}
 
-  drawOverlays(cx,cy,R);
-  // Center cross
-  setStroke(colors.center); /* center cross removed */// Header
-  setFill(colors.text); ctx.font='12px ui-monospace, monospace'; ctx.textAlign='left'; ctx.textBaseline='top';
-  ctx.fillText(`Range: 0 – ${rangeNm} NM`, 10, 8);
+function drawScope(){
+  const w = canvas.width / DPR;
+  const h = canvas.height / DPR;
+  const margin = 24;
+  const R = Math.min(w, h)/2 - margin;
+  const cx = w/2, cy = h/2;
+  if(!(R>10)) return;
+  const content = [canvas.width, canvas.height, DPR, showRings, ringSpacing, theme, colors.bg, colors.text,
+              colors.navaid, overlayVersion, Object.keys(overlayLayers).filter(k => overlayLayers[k].checked).join(','), overlayDecimate,
+              showAirports, showNavaids, showFixes, window.navaidsVersion || 0].join('|');
+  const sk = content + '|' + center.lat + '|' + center.lon + '|' + rangeNm;
+  const nowMs = performance.now();
+  const viewOnly = staticView && staticView.content === content && !staticDirty;
+  ctx.clearRect(0, 0, w, h);
+  if(sk !== staticKey || staticDirty){
+    if(viewOnly && mapMoving() && nowMs - staticDrawnMs < STATIC_MOVE_MS){
+      // the map is moving: show the last picture shifted and scaled to the new view (cheap),
+      // the lines are redrawn properly every STATIC_MOVE_MS and when the movement stops
+      const sc = staticView.range / rangeNm;
+      const ky = 60 * R / rangeNm, kx = ky * Math.cos(center.lat * Math.PI / 180);
+      const px = cx + (staticView.lon - center.lon) * kx, py = cy - (staticView.lat - center.lat) * ky;
+      setFill(colors.bg); ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(staticCv, px - cx * sc, py - cy * sc, w * sc, h * sc);
+      requestDraw();                       // come back for the proper redraw
+    } else {
+      drawStatic(w, h, cx, cy, R); staticKey = sk; staticDirty = false;
+      staticView = {lat: center.lat, lon: center.lon, range: rangeNm, content};
+      staticDrawnMs = nowMs;
+      ctx.drawImage(staticCv, 0, 0, w, h);
+    }
+  } else {
+    ctx.drawImage(staticCv, 0, 0, w, h);
+  }
+  setFill(colors.text); ctx.font = '12px ui-monospace, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText(`Range: 0 – ${fmtRange(rangeNm)} NM`, 10, 8);
 
   window.labelBoxes = [];
   const ts = labelStyle === 'topsky' && typeof Topsky !== 'undefined' && tsUi;
@@ -950,6 +1080,13 @@ function drawScope(){
         ctx.fillRect(Math.round(tx)-1, Math.round(ty)-1, 3, 3);
         if(ts) tsObst.push({x: tx-2, y: ty-2, w: 4, h: 4});
       }
+    }
+
+    // Far outside the scope: nothing to draw or label (the trail above keeps sampling; the traffic list keeps it)
+    if(px < -60 || py < -60 || px > w + 60 || py > h + 60){
+      const lbl = (labelMode === 'icao') ? ac.hex : (labelMode === 'callsign' ? (ac.callsign || ac.hex) : ((showCallsign && ac.callsign) ? ac.callsign : ac.hex));
+      posList.push({d:rnm, label: lbl, alt: ac.alt ?? NaN, hex: ac.hex, squawk: ac.squawk, vr: ac.vr, reg: ac.reg, type: ac.type, sel_alt_ft: ac.sel_alt_ft, sel_alt_hundreds: ac.sel_alt_hundreds});
+      continue;
     }
 
     // Symbol (unfilled square)
@@ -1071,8 +1208,8 @@ if(isTypeOn() && ac.type){ infoParts.push(ac.type); } /*TYPE_AFTER_REG*/
     posList.push({d:rnm, label, alt: ac.alt ?? NaN, hex: ac.hex, squawk: ac.squawk, vr: ac.vr, reg: ac.reg, type: ac.type, sel_alt_ft: ac.sel_alt_ft, sel_alt_hundreds: ac.sel_alt_hundreds});
   }
 
-  // Draw navaids last (on top)
-  drawNavaidsLayer(cx, cy, R, ts ? tsObst : null);
+  // the navaid names (on the static layer) as label obstacles
+  if(ts) for(const o of staticNavObst) tsObst.push(o);
   drawOwnPosition(cx, cy, R, ts ? tsObst : null);
 
   // TopSky labels over everything (topsky.js)
@@ -1080,11 +1217,13 @@ if(isTypeOn() && ac.type){ infoParts.push(ac.type); } /*TYPE_AFTER_REG*/
     const mono = document.body.classList.contains('theme-full-el') || document.body.classList.contains('theme-full-el-yellow');
     tsRects = Topsky.drawLabels(ctx, tsItems, w, h, tsObst, tsPos, {
       text: colors.text, leader: colors.ring, extBg: colors.bg, emg: mono ? null : '#ff2d2d',
-      font: '12px ui-monospace, monospace'});
+      font: '12px ui-monospace, monospace', frozen: mapMoving()});
     tsTargetsLast = tsTargets;
   } else { tsRects = {}; tsTargetsLast = []; }
 
-  // MODE-S / no-pos list
+  // MODE-S / no-pos list and the traffic list: at most once a second
+  if(Date.now() - _trafficBuildTs >= 1000 && !_trafficPointerDown){
+  _trafficBuildTs = Date.now();
   const drawnHex = new Set(posList.map(x => x.hex));
   const noPos = [];
   for(const ac of aircraft.values()){
@@ -1114,34 +1253,6 @@ if(isTypeOn() && ac.type){ infoParts.push(ac.type); } /*TYPE_AFTER_REG*/
 
 
   
-function _selHundreds(obj){
-  try{
-    if(obj && Number.isFinite(obj.sel_alt_hundreds)) return Math.round(Number(obj.sel_alt_hundreds));
-    if(obj && Number.isFinite(obj.sel_alt_ft)){
-      var v = Number(obj.sel_alt_ft);
-      if(v >= 1000) return Math.round(v/100);
-      if(v >= 0 && v <= 600) return Math.round(v);
-    }
-  }catch(e){}
-  return null;
-}
-
-function _joinAlt(currentStr, curHundreds, selHundreds){
-  try{
-    if(!(selHundreds===0 || Number.isFinite(selHundreds))) return currentStr;
-    var s = String(currentStr);
-    while(s.length && /\s/.test(s.charAt(s.length-1))) s = s.slice(0,-1);
-    var last = s.slice(-1);
-    var sign = (last==='+'||last==='-'||last.charCodeAt(0)===8722) ? last : '';
-    var base = sign ? s.slice(0,-1) : s;
-    var code = String(Math.round(selHundreds)).padStart(3,'0');
-    if(!sign && (curHundreds===0 || Number.isFinite(curHundreds)) && Math.round(curHundreds)===Math.round(selHundreds)){
-      return base + '=' + code;
-    }
-    if(sign) return s + code;
-    return base + '-' + code;
-  }catch(e){ return currentStr; }
-}
 const lis = rows.slice(0, 80).map(function(item){
   var raw = String(item.label || '');
   var pure = raw.replace(/\*+$/, '');
@@ -1183,6 +1294,7 @@ const lis = rows.slice(0, 80).map(function(item){
     _trafficLastHTML = html;
     _trafficLastTs = nowTs;
   }
+  }
 }
 
 // Clock + loop
@@ -1192,8 +1304,17 @@ function fmtClock(){
 }
 setInterval(fmtClock, 250); fmtClock();
 
-function animate(){ try{ drawScope(); } catch(e){ try{ const el=document.getElementById('status'); if(el) el.textContent = 'Render error: ' + (e.message||e); }catch(_){} } requestAnimationFrame(animate); }
-animate();
+// Redraw on demand (data, mouse, settings, windows) and otherwise 5 times a second (blinking, hover data).
+const IDLE_REDRAW_MS = 200;
+let lastDrawMs = 0;
+function animate(t){
+  if(drawDirty || !(t - lastDrawMs < IDLE_REDRAW_MS)){
+    drawDirty = false; lastDrawMs = t || 0;
+    try{ drawScope(); } catch(e){ try{ const el=document.getElementById('status'); if(el) el.textContent = 'Render error: ' + (e.message||e); }catch(_){} }
+  }
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
 
 
 // --- Traffic list: links open in a new tab via target="_blank".

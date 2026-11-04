@@ -54,7 +54,7 @@
         <div class="label">Zoom (nm)</div>
         <div class="controls">
           <button id="zoomOut" class="btn">-</button>
-          <input id="rangeNm" type="number" min="10" max="400" step="5" value="20" />
+          <input id="rangeNm" type="number" min="2" max="400" step="any" value="20" />
           <button id="zoomIn" class="btn">+</button>
         </div>
       </div>
@@ -240,6 +240,7 @@
   </div>
   <script>
     window.RADAR_CENTER = {lat: {{ '%.6f' % center_lat }}, lon: {{ '%.6f' % center_lon }}};
+    window.RADAR_ASSET = "{{ asset_tag }}";
   </script>
   <script src="/static/js/topsky.js?v={{ asset_tag }}"></script>
   <script src="/static/js/radar.js?v={{ asset_tag }}"></script>

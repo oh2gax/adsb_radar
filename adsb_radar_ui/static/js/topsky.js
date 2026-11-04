@@ -76,7 +76,7 @@ const Topsky = (() => {
   // keeps its last position (pos[key]) while that stays free, so labels do not jump.
   // Extended first, then the selected, then from the lowest up (approach traffic).
   // items: { key, p:{x,y}, lines, sel, ext, alt, emg }
-  // P: { text, leader, extBg, emg, font }. Returns key -> label box.
+  // P: { text, leader, extBg, emg, font, frozen (map moving: keep each label's place) }. Returns key -> label box.
   function drawLabels(g, items, W, H, obst, pos, P) {
     g.save();
     g.font = P.font;
@@ -89,6 +89,32 @@ const Topsky = (() => {
     const syms = items.map(it => ({ x: it.p.x - 6, y: it.p.y - 6, w: 12, h: 12, key: it.key }));
     const ov = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) *
                          Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+    // A grid of 64 px cells: a candidate position is compared only with the labels, symbols and
+    // obstacles in the cells it touches (with 150 aircraft about 20 times less work than all of them).
+    const CELL = 64, grid = new Map();
+    let stamp = 0;
+    const cellsOf = (r, fn) => {
+      const x1 = Math.floor(r.x / CELL), x2 = Math.floor((r.x + r.w) / CELL);
+      const y1 = Math.floor(r.y / CELL), y2 = Math.floor((r.y + r.h) / CELL);
+      for (let cx = x1; cx <= x2; cx++) for (let cy = y1; cy <= y2; cy++) fn(cx * 65536 + cy);
+    };
+    const add = (r, wgt, key) => {
+      const e = { r, wgt, key, s: 0 };
+      cellsOf(r, k => { let c = grid.get(k); if (!c) grid.set(k, c = []); c.push(e); });
+    };
+    const near = (R, ownKey) => {        // weighted overlap with everything near R
+      let cost = 0; stamp++;
+      cellsOf(R, k => {
+        const c = grid.get(k); if (!c) return;
+        for (const e of c) {
+          if (e.s === stamp || (e.wgt === 8 && e.key === ownKey)) continue;
+          e.s = stamp; cost += ov(R, e.r) * e.wgt;
+        }
+      });
+      return cost;
+    };
+    for (const q of syms) add(q, 8, q.key);
+    for (const q of obst) add(q, 2);
     const rectFor = (it, k) => {
       const [dx, dy] = DIRS[k % 8], r = k < 8 ? 22 : 44, u = dx && dy ? 0.7071 : 1;
       const ax = it.p.x + dx * r * u, ay = it.p.y + dy * r * u;
@@ -102,12 +128,10 @@ const Topsky = (() => {
       const prev = pos[it.key];
       const order = prev != null ? [prev, ...ALL.filter(i => i !== prev)] : ALL;
       let best = null, bestCost = Infinity;
-      for (const k of order) {
+      if (P.frozen && prev != null) best = { k: prev, R: rectFor(it, prev) };   // map moving: keep the place
+      else for (const k of order) {
         const R = rectFor(it, k);
-        let cost = k >= 8 ? 1 : 0;                       // a near position first
-        for (const q of placed) cost += ov(R, q) * 4;
-        for (const q of syms) if (q.key !== it.key) cost += ov(R, q) * 8;
-        for (const q of obst) cost += ov(R, q) * 2;
+        let cost = (k >= 8 ? 1 : 0) + near(R, it.key);   // a near position first; labels 4, symbols 8, obstacles 2
         // outside the canvas: a fixed cost, more the more of the label is outside
         if (R.x < 0 || R.y < 0 || R.x + R.w > W || R.y + R.h > H)
           cost += 50 + (R.w * R.h - Math.max(0, Math.min(R.x + R.w, W) - Math.max(R.x, 0)) * Math.max(0, Math.min(R.y + R.h, H) - Math.max(R.y, 0))) * 8;
@@ -116,6 +140,7 @@ const Topsky = (() => {
       }
       pos[it.key] = best.k;
       placed.push(best.R);
+      add(best.R, 4);
       const R = best.R;
       rects[it.key] = R;
       if (it.ext) {                                      // extended: a backing and a thin frame

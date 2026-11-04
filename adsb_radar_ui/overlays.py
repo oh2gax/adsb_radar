@@ -1,5 +1,5 @@
-from flask import jsonify, request
-import os, json as _json
+from flask import jsonify, request, Response
+import os, gzip, json as _json
 from math import radians, cos
 
 def register_overlays(app, CENTER_LAT, CENTER_LON, OVERLAY_DIR, exclude_names=None):
@@ -68,6 +68,47 @@ def register_overlays(app, CENTER_LAT, CENTER_LON, OVERLAY_DIR, exclude_names=No
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)}), 500
 
+    _layer_bytes = {}   # (name, dec) -> (json bytes, gzip bytes)
+
+    @app.route('/api/overlay/<name>')
+    def overlay_layer(name):
+        """One whole line layer, for the browser to keep: {"segments": [[lat, lon, lat, lon, ...], ...]}.
+        Coordinates rounded to 5 decimals (about 1 m); every dec-th point (dec=1..4), first and last always
+        kept. Sent gzip-compressed and cacheable: the page asks with ?v=<version>, so a new version of
+        the radar gets fresh data."""
+        try:
+            if not _overlays_cache:
+                _load_overlays()
+            if name not in _overlays_cache:
+                return jsonify({'ok': False, 'error': 'no such layer'}), 404
+            try:
+                dec = max(1, min(4, int(request.args.get('dec') or 1)))
+            except ValueError:
+                dec = 1
+            key = (name, dec)
+            if key not in _layer_bytes:
+                segs = []
+                for seg in _overlays_cache[name]['segments']:
+                    s2 = seg[::dec] if dec > 1 else list(seg)
+                    if s2[-1] != seg[-1]:
+                        s2.append(seg[-1])
+                    flat = []
+                    for lat, lon in s2:
+                        flat.append(round(lat, 5)); flat.append(round(lon, 5))
+                    segs.append(flat)
+                raw = _json.dumps({'ok': True, 'name': name, 'segments': segs}, separators=(',', ':')).encode()
+                _layer_bytes[key] = (raw, gzip.compress(raw, 6))
+            raw, gz = _layer_bytes[key]
+            use_gz = 'gzip' in (request.headers.get('Accept-Encoding') or '')
+            resp = Response(gz if use_gz else raw, mimetype='application/json')
+            if use_gz:
+                resp.headers['Content-Encoding'] = 'gzip'
+            resp.headers['Vary'] = 'Accept-Encoding'
+            resp.headers['Cache-Control'] = 'public, max-age=86400'
+            return resp
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 500
+
     @app.route('/api/overlays_fetch')
     def overlays_fetch():
         try:
@@ -100,4 +141,4 @@ def register_overlays(app, CENTER_LAT, CENTER_LON, OVERLAY_DIR, exclude_names=No
                 out[nm] = segs_out
             return jsonify({'ok': True, 'layers': out})
         except Exception as e:
-            return jsonify({'ok': False, 'error': str(e)}), 500
+            return jsonify({'ok': False, 'error': str(e)}), 500

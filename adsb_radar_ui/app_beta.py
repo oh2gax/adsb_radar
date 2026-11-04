@@ -3,7 +3,8 @@ import os, re, time, threading, csv, sys, json, socket, subprocess, sqlite3, url
 from datetime import datetime
 from math import radians, cos, sin
 from urllib.request import pathname2url
-from flask import Flask, jsonify, render_template, request, abort
+from flask import Flask, jsonify, render_template, request, abort, Response
+import gzip
 from overlays import register_overlays
 import config
 import ehs
@@ -717,6 +718,20 @@ def index():
                            version=APP_VERSION,
                            asset_tag=ASSET_TAG)
 
+def _json_response(obj):
+    """JSON, gzip-compressed when the browser accepts it (the aircraft list is asked every second:
+    about 60 kB with 150 aircraft, 8 kB compressed)."""
+    raw = json.dumps(obj, separators=(",", ":")).encode()
+    if len(raw) > 1500 and "gzip" in (request.headers.get("Accept-Encoding") or ""):
+        resp = Response(gzip.compress(raw, 1), mimetype="application/json")
+        resp.headers["Content-Encoding"] = "gzip"
+    else:
+        resp = Response(raw, mimetype="application/json")
+    resp.headers["Vary"] = "Accept-Encoding"
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.route("/api/aircraft")
 def api_aircraft():
     now = time.time()
@@ -731,7 +746,7 @@ def api_aircraft():
     if feed_age is None or feed_age > config.FEED_STALE_SECONDS:
         out["aircraft"] = []
         out["feed_lost"] = True
-    return jsonify(out), 200
+    return _json_response(out)
 
 
 # --- METAR / TAF (same NOAA tgftp source and parsing as MODE-S Wind) ---
