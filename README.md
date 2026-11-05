@@ -50,8 +50,12 @@ top-left logo; nothing has to be edited by hand.
   lines and automatic anti-overlap, as in MODE-S Wind's ATC display; the aircraft under the
   mouse or a clicked one shows the six-line extended label with IAS, TAS, Mach, magnetic
   heading, drift, roll, wind, temperature and NACp from MODE-S Wind's Beast feed
-- Airports, navaids, waypoints and line overlays (coast, FIR, ATS routes, ILS, EFHK approach lines, …);
-  `data/overlays/efhk_approach.geojson` = the EFHK finals from MODE-S Wind's `overlays/efhk_ils.geojson`
+- **AIP Finland, updated automatically** (`navdata.py`): the Finnish navaids, IFR points (en-route and the
+  aerodromes' own), the RNAV routes, the FIR, TMA / CTA / CTR, ACC sectors and prohibited / restricted /
+  danger areas from the eAIP of AIS Finland; a new AIRAC amendment is installed when it takes effect
+- Airports (OurAirports), navaids outside Finland (OurAirports) and line overlays (coast, water, borders,
+  runways, ILS, EFHK approach lines); `data/overlays/efhk_approach.geojson` = the EFHK finals from MODE-S
+  Wind's `overlays/efhk_ils.geojson`
 - Left pane in the ATC style of the windows (`templates/_side.html`, `static/js/sidepane.js`): sections that open /
   close, on / off buttons (dark = on), button rows for choices, « hides the pane
 - **TRAFFIC** window: all aircraft in a movable / resizable table, sortable, a row click selects the aircraft
@@ -111,6 +115,8 @@ it rolls back to the previous commit by itself. Hand edits made on the server ar
 | `REPLAY_DIR` | `adsb_radar_ui/data/replay` | the replay recorder's day files (created automatically, not in git) |
 | `REPLAY_DAYS` / `REPLAY_RANGE_NM` | 30 / 150 | days kept / aircraft within this range of the centre |
 | `REPLAY_MIN_FREE_GB` | 5 | recording pauses below this much free disk |
+| `NAVDATA_AUTO` / `NAVDATA_CHECK_HOURS` | 1 / 24 | check the AIP of Finland for a new AIRAC amendment (`0` = off) / how often |
+| `NAVDATA_DIR` | `adsb_radar_ui/data/navdata` | the installed AIP data (created automatically, not in git) |
 | `MAG_DECLINATION` | 10.5 | used for the wind only if `pygeomag` (WMM2025) is missing |
 | `FEED_STALE_SECONDS` | 30 | feed silence before targets are cleared |
 | `MAX_RANGE_NM` | 0 | drop targets beyond this range (0 = off) |
@@ -206,6 +212,25 @@ the EFHK traffic window adds the landings and departures that MODE-S Wind has no
 (same aircraft and kind within 10 minutes, `own: true`). Without MODE-S Wind's database
 the window shows the radar's own rows only.
 
+## AIP Finland (`navdata.py`)
+
+The Finnish navaids, IFR points, routes and airspaces come from the eAIP of AIS Finland (Fintraffic ANS,
+`https://www.ais.fi/eaip/`). AIP Finland GEN 0.1: *aeronautical data is available for further refining and
+research without a separate fee or agreement* (resale excluded). Shown for information only, not for
+navigation. A thread of the radar checks once a day (first 60 s after the start) which package is in force
+(the list at `/eaip/`, by effective date); only when it differs from the installed one it downloads ENR 2.1,
+ENR 3.2 (one page per route), ENR 4.1, ENR 4.4, ENR 5.1 and, for each aerodrome, AD 2 page 1 (AD 2.17 CTR,
+AD 2.19 navaids) and the WAYPOINTS AND FIXES PDF (read with `pypdf`) — about 80 requests, 20 s. The result is
+checked (counts within limits, positions inside Finland, shapes) before it replaces the previous data;
+on any failure the old data stay and `/api/navaids_meta` → `navdata.error` says why. Limits that run "along
+the state border" follow `data/fi_borders.geojson` (Finland's land borders, Natural Earth, public domain).
+
+Files in `data/navdata/` (not in git): `AIRAC.json` (package, effective date, AMDT, counts, time),
+`points.csv`, `navaids.csv`, `overlays/fi_fir|fi_tma|fi_sectors|fi_restricted|fi_routes.geojson`. The radar
+reads them again after an update (no restart); the layer URLs carry the package, so browsers fetch the new
+lines. Inside the Finnish FIR the navaids come only from the AIP; outside it from `data/navaids.csv`. By hand:
+`venv/bin/python navdata.py` (update if needed), `--force` (rebuild now), `--status`.
+
 ## Feed format
 
 A TCP server that sends one JSON array of aircraft per connection and closes it:
@@ -229,6 +254,7 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 | `/app`, `/app.webmanifest` | the mobile app and its web-app manifest |
 | `/api/aircraft` | targets, `feed_age`, `error`, `feed_lost`, `version` |
 | `/api/navaids?clat=&clon=&nmr=` | airports / navaids / waypoints within `nmr` NM |
+| `/api/navaids_meta` | counts, sources and `navdata` (AIRAC package, effective date, last check, error) |
 | `/api/overlays_meta`, `/api/overlay/<name>?dec=2` | line overlays (GeoJSON in `data/overlays`), one whole layer, gzip, cacheable |
 | `/api/qnh` | latest METAR and QNH (Auto QNH, `METAR_STATION`) |
 | `/api/efhk_traffic?kind=both&hours=3` | EFHK landings / departures from MODE-S Wind (kind arr/dep/both, hours 1/3/6/12/24) |

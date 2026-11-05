@@ -15,3 +15,8 @@ __pycache__/
 *.db
 *.db-wal
 *.db-shm
+
+# AIP Finland data downloaded by navdata.py (rebuilt automatically)
+adsb_radar_ui/data/navdata/
+adsb_radar_ui/data/navdata.new/
+adsb_radar_ui/data/navdata.old/

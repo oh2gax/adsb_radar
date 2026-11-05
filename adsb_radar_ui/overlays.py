@@ -2,7 +2,10 @@ from flask import jsonify, request, Response
 import os, gzip, json as _json
 from math import radians, cos
 
-def register_overlays(app, CENTER_LAT, CENTER_LON, OVERLAY_DIR, exclude_names=None):
+def register_overlays(app, CENTER_LAT, CENTER_LON, OVERLAY_DIR, exclude_names=None, extra_dirs=None, seg_filter=None, version=None):
+    """extra_dirs: a function returning more folders of .geojson layers (the AIP data, navdata.py);
+    seg_filter(name, line) -> False drops a line (old lines replaced by the AIP data); version() -> a text
+    that changes with the data (the layer URLs carry it). Returns reload(), to call when the data change."""
     exclude_names = set(exclude_names or [])
     _overlays_cache = {}
 
@@ -35,15 +38,15 @@ def register_overlays(app, CENTER_LAT, CENTER_LON, OVERLAY_DIR, exclude_names=No
     def _load_overlays():
         nonlocal _overlays_cache
         _overlays_cache = {}
-        if not os.path.isdir(OVERLAY_DIR):
-            return
-        for fn in sorted(os.listdir(OVERLAY_DIR)):
+        dirs = [OVERLAY_DIR] + list((extra_dirs() if extra_dirs else None) or [])
+        files = [(d, fn) for d in dirs if os.path.isdir(d) for fn in sorted(os.listdir(d))]
+        for d, fn in files:
             if not fn.lower().endswith('.geojson'):
                 continue
             base_noext = os.path.splitext(fn)[0]
             if base_noext in exclude_names:
                 continue
-            path = os.path.join(OVERLAY_DIR, fn)
+            path = os.path.join(d, fn)
             try:
                 with open(path, 'r', encoding='utf-8') as fh:
                     gj = _json.load(fh)
@@ -53,6 +56,8 @@ def register_overlays(app, CENTER_LAT, CENTER_LON, OVERLAY_DIR, exclude_names=No
                         _ov_handle_geom_into(feat.get('geometry') or {}, segs)
                 else:
                     _ov_handle_geom_into(gj, segs)
+                if seg_filter:
+                    segs = [sg for sg in segs if seg_filter(base_noext, sg)]
                 # bounding box per line: (min_lat, max_lat, min_lon, max_lon)
                 boxes = [(min(p[0] for p in sg), max(p[0] for p in sg), min(p[1] for p in sg), max(p[1] for p in sg)) for sg in segs]
                 _overlays_cache[base_noext] = {'segments': segs, 'bbox': boxes, 'count': len(segs)}
@@ -64,7 +69,8 @@ def register_overlays(app, CENTER_LAT, CENTER_LON, OVERLAY_DIR, exclude_names=No
         try:
             if not _overlays_cache:
                 _load_overlays()
-            return jsonify({'ok': True, 'layers': {k: v['count'] for k, v in _overlays_cache.items()}})
+            return jsonify({'ok': True, 'layers': {k: v['count'] for k, v in _overlays_cache.items()},
+                            'ver': (version() if version else '')})
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)}), 500
 
@@ -142,3 +148,10 @@ def register_overlays(app, CENTER_LAT, CENTER_LON, OVERLAY_DIR, exclude_names=No
             return jsonify({'ok': True, 'layers': out})
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)}), 500
+
+    def reload():
+        """Read the layers again (new AIP data); the browser gets them under a new ?v=."""
+        _load_overlays()
+        _layer_bytes.clear()
+
+    return reload

@@ -11,6 +11,7 @@ import ehs
 import tracks
 import movements
 import replay
+import navdata
 
 app = Flask(__name__, static_url_path="/static")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -766,7 +767,26 @@ def _resolve_data_file(fname):
             return p
     return None
 
+# --- AIP Finland (navdata.py, from 2026-11-05) ---
+# When the AIP data are installed (data/navdata), the navaids and IFR points inside the Finnish FIR come
+# from them (the old navaids.csv rows there are dropped; outside Finland they stay); the IFR points, the
+# ATS routes and the FIR, TMA / CTA / CTR, sector and P / R / D lines come only from the AIP (the old
+# waypoints.csv, efhk_ats and efhk_fir were retired on 2026-11-05). A thread checks once a day for a new
+# AIRAC amendment.
+_navdata = {"meta": None, "fir": None, "last_check": None, "error": None, "message": None}
+
+
+def _navdata_refresh():
+    _navdata["meta"] = navdata.installed(navdata.OUT_DIR)
+    _navdata["fir"] = navdata.fir_ring(navdata.OUT_DIR) if _navdata["meta"] else None
+
+
+def _in_fi(lat, lon):
+    return bool(_navdata["fir"]) and navdata.inside_fir(_navdata["fir"], lat, lon)
+
+
 def _load_navaids():
+    _navdata_refresh()
     files = {
         "airports": _resolve_data_file("airports.csv"),
         "navaids":  _resolve_data_file("navaids.csv"),
@@ -774,12 +794,55 @@ def _load_navaids():
     }
     for key, path in files.items():
         rows = _load_csv_norm(path, fname_hint=os.path.basename(path) if path else None) if path else []
+        if key != "airports" and _navdata["fir"]:
+            rows = [r for r in rows if not _in_fi(r["lat"], r["lon"])]
+            aip = os.path.join(navdata.OUT_DIR, "navaids.csv" if key == "navaids" else "points.csv")
+            try:
+                with open(aip, newline="", encoding="utf-8") as fh:
+                    for r in csv.DictReader(fh):
+                        rows.append({"ident": r["ident"], "name": r.get("name") or r["ident"],
+                                     "type": (r.get("type") or "").lower(), "lat": float(r["latitude_deg"]),
+                                     "lon": float(r["longitude_deg"]), "src": "aip"})
+                path = (f"{path} (outside Finland) + " if path else "") + aip
+            except (OSError, ValueError, KeyError) as e:
+                print(f"[navdata] {aip}: {e}", file=sys.stderr)
         _navaids_cache[key] = rows
         _navaids_counts[key] = len(rows)
         _navaids_sources[key] = path
         print(f"[navaids] {key}: {len(rows)} from {path or 'N/A'}", file=sys.stderr)
 
 _load_navaids()
+
+
+def _overlay_dirs():
+    d = os.path.join(navdata.OUT_DIR, "overlays")
+    return [d] if _navdata["meta"] and os.path.isdir(d) else []
+
+
+def _overlay_version():
+    m = _navdata["meta"]
+    return (m.get("package", "") + "@" + m.get("fetched", "")) if m else "none"
+
+
+def _navdata_keeper():
+    """Check the AIP once a day (first 60 s after the start) and install a new amendment when it takes
+    effect; NAVDATA_AUTO=0 switches this off (navdata.py can still be run by hand)."""
+    if not config.NAVDATA_AUTO:
+        return
+    time.sleep(60)
+    while True:
+        try:
+            changed, meta, msg = navdata.update(log=lambda t: print(t, file=sys.stderr))
+            _navdata.update(last_check=time.time(), error=None, message=msg)
+            print(f"[navdata] {msg}", file=sys.stderr)
+            if changed:
+                _load_navaids()
+                if _overlays_reload:
+                    _overlays_reload()
+        except Exception as e:                        # network, parse or check failure: keep the old data
+            _navdata.update(last_check=time.time(), error=str(e)[:300])
+            print(f"[navdata] check failed: {e}", file=sys.stderr)
+        time.sleep(max(1.0, config.NAVDATA_CHECK_HOURS) * 3600)
 
 @app.route("/api/navaids")
 def api_navaids():
@@ -810,7 +873,12 @@ def api_navaids():
 
 @app.route("/api/navaids_meta")
 def api_navaids_meta():
-    return jsonify({"counts": _navaids_counts, "sources": _navaids_sources})
+    m = _navdata["meta"] or {}
+    return jsonify({"counts": _navaids_counts, "sources": _navaids_sources,
+                    "navdata": {"installed": bool(m), "package": m.get("package"), "effective": m.get("effective"),
+                                "amdt": m.get("amdt"), "fetched": m.get("fetched"), "counts": m.get("counts"),
+                                "source": m.get("source"), "last_check": _navdata["last_check"],
+                                "message": _navdata["message"], "error": _navdata["error"]}})
 
 @app.route("/")
 def index():
@@ -1390,6 +1458,9 @@ def api_track(icao):
 
 
 # Register overlays endpoints
-register_overlays(app, config.CENTER_LAT, config.CENTER_LON, os.path.join(BASE_DIR, 'data', 'overlays'), exclude_names={'efhk_coast_demo','efhk_ils_demo','Navaids','efhk_nav'})
+_overlays_reload = register_overlays(app, config.CENTER_LAT, config.CENTER_LON, os.path.join(BASE_DIR, 'data', 'overlays'),
+                                     exclude_names={'efhk_coast_demo','efhk_ils_demo','Navaids','efhk_nav'},
+                                     extra_dirs=_overlay_dirs, version=_overlay_version)
+threading.Thread(target=_navdata_keeper, daemon=True).start()
 if __name__ == "__main__":
     app.run(host=config.HOST, port=config.PORT, debug=False)

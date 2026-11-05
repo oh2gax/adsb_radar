@@ -836,7 +836,10 @@ async function fetchNavMeta(){
     const j = await r.json();
     const c = j.counts || {};
     const el = document.getElementById('navMeta');
-    if(el){ window.navMetaBase = `Navaids: airports ${c.airports||0}, navaids ${c.navaids||0}, fixes ${c.fixes||0}`; el.textContent = window.navMetaBase; }
+    const nd = j.navdata || {};
+    const fmtD = d => { const m = /^(\d{4})-(\d\d)-(\d\d)$/.exec(d || ''); return m ? `${m[3]}.${m[2]}.${m[1]}` : (d || ''); };
+    window.navdataInfo = nd.installed ? `AIP Finland AIRAC ${fmtD(nd.effective)}${nd.amdt ? ' (AMDT ' + nd.amdt + ')' : ''}` : '';
+    if(el){ window.navMetaBase = (window.navdataInfo ? window.navdataInfo + ' · ' : '') + `Navaids: airports ${c.airports||0}, navaids ${c.navaids||0}, fixes ${c.fixes||0}`; el.textContent = window.navMetaBase; }
   }catch(e){}
 }
 fetchNavaids(); fetchNavMeta(); loadOverlayMeta();
@@ -871,6 +874,7 @@ function setFill(c){ ctx.fillStyle = c; }
 function setStroke(c){ ctx.strokeStyle = c; }
 
 
+const TERMINAL_FIX_MAX_NM = 25;   // the aerodromes' own points (AIP AD 2) only at this range or closer
 function drawNavaidsLayer(g, cx, cy, R, obst){   // g: the static layer; obst: TopSky label obstacles (symbol + name boxes)
   let inView = {airports:0, navaids:0, fixes:0};
   const lineW = (typeof theme!=='undefined' && theme==='gray') ? 1.6 : 1.2;
@@ -891,6 +895,7 @@ function drawNavaidsLayer(g, cx, cy, R, obst){   // g: the static layer; obst: T
     for(const it of arr){
       const lat = Number(it.lat), lon = Number(it.lon);
       if(!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      if(ds.type === 'fix' && it.type === 'terminal' && rangeNm > TERMINAL_FIX_MAX_NM) continue;   // the aerodromes' SID / STAR / approach points
       const proj = projectNm(lat, lon);
       const rnm = Math.hypot(proj.x, proj.y);
       if(rnm > rangeNm) continue; else { inView[ds.key] = (inView[ds.key]||0)+1; }
@@ -993,6 +998,11 @@ let overlayDecimate = parseInt(localStorage.getItem('overlayDecimate') || '2', 1
 function overlayCategory(name){
   const n=(name||'').toLowerCase();
   if(n.includes('approach')) return 'Approach';        // EFHK final approach lines (efhk_approach)
+  // AIP Finland (navdata.py): routes, TMA / CTA / CTR, ACC sectors, prohibited / restricted / danger areas
+  if(n === 'fi_routes') return 'ATS';
+  if(n === 'fi_tma') return 'TMA/CTA';
+  if(n === 'fi_sectors') return 'Sectors';
+  if(n === 'fi_restricted') return 'Restricted';
   if(n.includes('coast')||n.includes('shore')) return 'Coastlines';
   if(n.includes('ils')) return 'ILS';
   if(n.includes('apt')||n.includes('airport')) return 'Airports';
@@ -1003,21 +1013,25 @@ function overlayCategory(name){
   if(n.includes('aqua')||n.includes('water')) return 'Hydro';
   return 'Other';
 }
+const OVERLAY_DEFAULT_ON = new Set(['fi_fir', 'fi_tma']);   // shown until switched off (AIP Finland)
+let overlayDataVer = '';                                         // changes with a new AIRAC (server: /api/overlays_meta ver)
 async function loadOverlayMeta(){
   const listEl=document.getElementById('overlayList'); if(!listEl) return;
   try{
     const r=await fetch('/api/overlays_meta',{cache:'no-store'});
     const j=await r.json(); if(!j.ok) throw new Error(j.error||'meta');
     const layers=j.layers||{}; const cats={};
+    overlayDataVer = j.ver || '';
     Object.entries(layers).forEach(([nm,count])=>{
-      const checked=(localStorage.getItem('ov_'+nm)||'0')==='1';
+      const saved=localStorage.getItem('ov_'+nm);
+      const checked=(saved===null ? (OVERLAY_DEFAULT_ON.has(nm) ? '1' : '0') : saved)==='1';
       const cat=overlayCategory(nm);
       overlayLayers[nm]={checked,count,cat};
       (cats[cat]||(cats[cat]=[])).push(nm);
     });
     if(Object.keys(layers).length===0){ listEl.textContent='No .geojson files in /data/overlays'; return; }
     // one toggle button per category (the left pane's MAP → Lines); the layers stay as hidden check boxes
-    const CAT_SHORT = {Hydro:'WATER', Coastlines:'COAST', Navaids:'NAVAIDS', Other:'OTHER'};
+    const CAT_SHORT = {Hydro:'WATER', Coastlines:'COAST', Navaids:'NAVAIDS', Other:'OTHER', 'TMA/CTA':'TMA/CTA', Sectors:'SECTORS', Restricted:'P/R/D'};
     listEl.innerHTML = Object.entries(cats).map(([cat,names])=>{
       const anyChecked = names.some(nm=>overlayLayers[nm].checked);
       const tip = names.map(nm=>`${nm} (${overlayLayers[nm].count})`).join(', ');
@@ -1056,7 +1070,7 @@ async function fetchOverlays(){
     if((have && have.dec === overlayDecimate) || overlayLoading[key]) return;
     overlayLoading[key] = true;
     try{
-      const r = await fetch(`/api/overlay/${encodeURIComponent(nm)}?dec=${overlayDecimate}&v=${encodeURIComponent(window.RADAR_ASSET || '')}`);
+      const r = await fetch(`/api/overlay/${encodeURIComponent(nm)}?dec=${overlayDecimate}&v=${encodeURIComponent((window.RADAR_ASSET || '') + '.' + overlayDataVer)}`);
       const j = await r.json(); if(!j.ok) throw new Error(j.error || 'overlay');
       const segs = [], bbox = new Float64Array(j.segments.length * 4);
       j.segments.forEach((flat, i) => {
@@ -1090,6 +1104,10 @@ function drawOverlays(g, w, h, cx, cy, R){
     if(lower.includes('approach')){ g.setLineDash([4,4]); g.lineWidth = 1; }   // as MODE-S Wind's ATC map
     else if(lower.includes('ils')){ g.setLineDash([6,4]); g.lineWidth = 1; }
     else if(lower.includes('coast') || lower.includes('shore')){ g.setLineDash([]); g.lineWidth = 1.2; }
+    else if(nm === 'fi_tma'){ g.setLineDash([]); g.lineWidth = 1; }
+    else if(nm === 'fi_sectors'){ g.setLineDash([1,3]); g.lineWidth = 1; }
+    else if(nm === 'fi_restricted'){ g.setLineDash([6,3]); g.lineWidth = 1; }
+    else if(nm === 'fi_routes'){ g.setLineDash([]); g.lineWidth = 0.8; }
     else if(lower.includes('border') || lower.includes('fir')){ g.setLineDash([3,3]); g.lineWidth = 1; }
     else { g.setLineDash([]); g.lineWidth = 1; }
     g.beginPath();

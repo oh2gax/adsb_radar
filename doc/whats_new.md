@@ -7,8 +7,13 @@ Format: a version starts with `## v.DDMMYYYY — title`; under it bullets (`- `,
 sub-bullets indented by two spaces) or plain paragraphs. **bold**, *italic* and
 `code` are shown as such.
 
-## v.05112026 — Replay, pilot reports, new left pane, user guide
+## v.05112026 — Replay, pilot reports, new left pane, user guide, AIP Finland
 
+- **Up-to-date navaids, waypoints and airspace** — the Finnish navaids, IFR waypoints, routes and airspaces now come from the official **AIP Finland** (Fintraffic ANS) and are updated automatically: the radar checks every day and switches to a new AIRAC amendment the day it takes effect. STATUS in the left pane shows which one is in use (e.g. *AIRAC 01.10.2026*).
+  - The old data were years out of date: of the waypoints shown in Finland only 3 still existed, and many of the beacons around Helsinki-Vantaa (ESP, KOR, U, H …) have been withdrawn.
+  - *Points → NAVAID*: the VORs, DMEs and locators of the AIP. *Points → WPT*: the 295 en-route points and the aerodromes' own SID / STAR / approach points — these only when zoomed in to 25 NM or closer.
+  - *Lines*: **TMA/CTA** (the TMAs, CTAs and CTRs, on by default), **FIR** (the Finland FIR, on by default), **SECTORS** (the ACC sectors), **ATS** (the 28 RNAV routes — above FL 95 Finland is free route airspace, so there are few routes) and **P/R/D** (the prohibited, restricted and danger areas). The same switches are in the app's *Map* menu.
+  - For information only, not for navigation.
 - **New left pane** — the settings on the left now look like the windows on the scope: the scope's own colours, a thin line between sections, and buttons instead of tick boxes — a button is **dark while it is on**, and a row of buttons picks one of a few choices (e.g. `CLASSIC | TOPSKY`, `.5 | 1 | 2 | 3 | 5` min). The pane is narrower, so the map is wider.
   - The sections (VIEW, WINDOWS, LABELS, TARGETS, MAP, ALTIMETER, OWN POSITION, ICAO24 FILTER, STATUS) open and close from their title; a closed one shows a short summary (e.g. `Q0997 auto`). The pane remembers which are open.
   - The UTC clock and the feed status are at the top; **WINDOWS** opens the windows on the scope: TRAFFIC LIST, EFHK TRAFFIC, METAR & TAF and REPLAY.

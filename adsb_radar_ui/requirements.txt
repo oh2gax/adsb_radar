@@ -1,3 +1,4 @@
 Flask>=3.0,<4
 pyModeS>=3.0.0
 pygeomag>=1.1
+pypdf>=4.0

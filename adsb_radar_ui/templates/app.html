@@ -37,7 +37,7 @@
           var d = { labelStyle: 'topsky', rangeNm: '20', theme: 'gray', showTrail: '1', trailLenSec: '60',
                     showVector: '1', vectorMins: '1', showHistory: '1', showType: '0', showReg: '1', showHdg: '0',
                     showRings: '1', qnhAuto: '1', overlayDecimate: '2', showAirports: '0', showNavaids: '0',
-                    showFixes: '0', ov_efhk_coast: '1', ov_efhk_aqua: '1', ov_efhk_apt: '1', ov_efhk_fir: '1', ov_efhk_approach: '1',
+                    showFixes: '0', ov_efhk_coast: '1', ov_efhk_aqua: '1', ov_efhk_apt: '1', ov_fi_fir: '1', ov_fi_tma: '1', ov_efhk_approach: '1',
                     appWake: '1', appInit: '1' };
           for (var k in d) localStorage.setItem(k, d[k]);
         }
@@ -155,6 +155,9 @@
         <label>Borders<input type="checkbox" data-ovcat="Borders"><i></i></label>
         <label>FIR<input type="checkbox" data-ovcat="FIR"><i></i></label>
         <label>ATS routes<input type="checkbox" data-ovcat="ATS"><i></i></label>
+        <label>TMA / CTA / CTR<input type="checkbox" data-ovcat="TMA/CTA"><i></i></label>
+        <label>ACC sectors<input type="checkbox" data-ovcat="Sectors"><i></i></label>
+        <label>Restricted areas (P / R / D)<input type="checkbox" data-ovcat="Restricted"><i></i></label>
         <label>Approach lines<input type="checkbox" data-ovcat="Approach"><i></i></label>
       </div>
       <div class="app-fl">DETAIL</div>

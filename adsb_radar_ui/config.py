@@ -47,6 +47,10 @@ REPLAY_DIR = os.environ.get("REPLAY_DIR", os.path.join(_BASE_DIR, "data", "repla
 REPLAY_DAYS = int(os.environ.get("REPLAY_DAYS", "30"))
 REPLAY_RANGE_NM = float(os.environ.get("REPLAY_RANGE_NM", "150"))
 REPLAY_MIN_FREE_GB = float(os.environ.get("REPLAY_MIN_FREE_GB", "5"))   # pause recording below this
+# AIP Finland (navdata.py): navaids, IFR points, routes and airspaces; checked once a day, installed
+# into data/navdata when a new AIRAC amendment takes effect
+NAVDATA_AUTO = os.environ.get("NAVDATA_AUTO", "1") not in ("0", "false", "no")
+NAVDATA_CHECK_HOURS = float(os.environ.get("NAVDATA_CHECK_HOURS", "24"))
 
 # Used for the wind when the pygeomag model is not installed (deg east, EFHK area)
 MAG_DECLINATION = float(os.environ.get("MAG_DECLINATION", "10.5"))
