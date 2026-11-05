@@ -16,7 +16,7 @@ instead of its 2-3 s sweeps:
   go-around - on an approach, climbing >= 600 fpm below 2200 ft MSL for 4 s and 50 ft;
               or, after crossing the threshold, 200 ft above the height there (a low go-around or
               a touch-and-go).
-Landing: the threshold crossed and no climb for 60 s, or ground speed under 80 kt after it; or the
+Landing: the threshold crossed below 1000 ft and no climb for 60 s, or ground speed under 80 kt after it; or the
 aircraft is lost on short final (within 4 NM, below 1500 ft) on an approach.
 Departure: within 6 NM of EFHK below 1500 ft MSL, climbing >= 300 fpm at >= 90 kt, not on an
 approach and not after a go-around (the start rule of MODE-S Wind's collector/departures.py); the
@@ -53,6 +53,7 @@ GA_MAX_ALT_FT = 2200.0
 GA_COUNT_EXPIRY_SEC = 7200.0
 GA_ALARM_SEC = 1800.0           # the GA mark is kept at most 30 min (and until the landing)
 LAND_THR_PASS_NM = 0.2
+LAND_THR_MAX_FT = 1000.0        # ... and crossed below 1000 ft above the threshold
 LAND_CONFIRM_SEC = 60.0
 LAND_CANCEL_CLIMB_FT = 200.0
 LAND_SLOW_KT = 80.0
@@ -237,7 +238,9 @@ class MovementDetector:
         # threshold crossed: the runway match ends (or flips to the parallel runway) at / past the threshold
         if st["land_rwy"] is None and st["phase"] == "APPROACHING" and st["app_rwy"] and rwy != st["app_rwy"]:
             r = next(x for x in RUNWAYS if x[0] == st["app_rwy"])
-            if _along_cross(lat, lon, r)[0] <= LAND_THR_PASS_NM:
+            # a landing crosses the threshold low (~50 ft): an aircraft passing over the runway higher up
+            # (descending through 2000 ft, say) has not landed
+            if _along_cross(lat, lon, r)[0] <= LAND_THR_PASS_NM and h <= r[4] + LAND_THR_MAX_FT:
                 st["land_rwy"], st["land_t"], st["land_h"] = st["app_rwy"], now, h
 
         if m:

@@ -42,6 +42,11 @@ BEAST_PORT = int(os.environ.get("BEAST_PORT", "31005"))
 # Flight tracks for the history line: adsb_radar's own database (created if missing, not in git)
 TRACKS_DB_PATH = os.environ.get("TRACKS_DB_PATH", os.path.join(_BASE_DIR, "data", "tracks.db"))
 TRACKS_HOURS = float(os.environ.get("TRACKS_HOURS", "24"))
+# Replay recorder (replay.py): every second, every aircraft within REPLAY_RANGE_NM of the centre
+REPLAY_DIR = os.environ.get("REPLAY_DIR", os.path.join(_BASE_DIR, "data", "replay"))
+REPLAY_DAYS = int(os.environ.get("REPLAY_DAYS", "30"))
+REPLAY_RANGE_NM = float(os.environ.get("REPLAY_RANGE_NM", "150"))
+REPLAY_MIN_FREE_GB = float(os.environ.get("REPLAY_MIN_FREE_GB", "5"))   # pause recording below this
 
 # Used for the wind when the pygeomag model is not installed (deg east, EFHK area)
 MAG_DECLINATION = float(os.environ.get("MAG_DECLINATION", "10.5"))

@@ -99,6 +99,9 @@ it rolls back to the previous commit by itself. Hand edits made on the server ar
 | `BEAST_HOST` / `BEAST_PORT` | 127.0.0.1 / 31005 | MODE-S Wind's Beast feed for the extended label; `0` = off |
 | `TRACKS_DB_PATH` | `adsb_radar_ui/data/tracks.db` | the radar's own track recorder (created automatically, not in git) |
 | `TRACKS_HOURS` | 24 | how long tracks are kept |
+| `REPLAY_DIR` | `adsb_radar_ui/data/replay` | the replay recorder's day files (created automatically, not in git) |
+| `REPLAY_DAYS` / `REPLAY_RANGE_NM` | 30 / 150 | days kept / aircraft within this range of the centre |
+| `REPLAY_MIN_FREE_GB` | 5 | recording pauses below this much free disk |
 | `MAG_DECLINATION` | 10.5 | used for the wind only if `pygeomag` (WMM2025) is missing |
 | `FEED_STALE_SECONDS` | 30 | feed silence before targets are cleared |
 | `MAX_RANGE_NM` | 0 | drop targets beyond this range (0 = off) |
@@ -133,6 +136,19 @@ direction changes by 1.5° or more, the altitude by 50 ft or more, or else every
 minute when standing still) — about 85 bytes a point, 6–8 MB per 100 aircraft-hours, so a
 busy day around EFHK is some tens of MB. A flight ends after
 20 minutes without positions. The file is written every 3 s and cleaned every hour.
+
+## Replay recorder (`replay.py`)
+
+Every second, every aircraft within `REPLAY_RANGE_NM` (150) of the centre: position, altitude, ground
+speed, track, vertical rate and position source, the label values (callsign, squawk, selected
+altitude, registration, type) and the extended label's Comm-B values when they change, plus the
+EFHK movements and the METARs. One SQLite file per UTC day in `REPLAY_DIR`
+(`adsb_radar_ui/data/replay/YYYY-MM-DD.db`, not in git, untouched by `update.sh`), one row per
+aircraft per minute: delta-coded integers, zlib-compressed (about 5 bytes per aircraft-second, 9 with
+Comm-B, in tests). The minute in memory is written when it ends; older days than `REPLAY_DAYS` (30)
+are deleted hourly; writing pauses while the disk has less than `REPLAY_MIN_FREE_GB` (5) free.
+`/api/replay/range` and `/api/replay/chunk` read it; `/api/ehs_status` → `replay` shows the size,
+bytes per sample and errors. The replay screens come next (claude/design-replay.md in the project).
 
 ## Mobile app (`/app`)
 
@@ -183,6 +199,8 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 
 | Endpoint | Returns |
 |---|---|
+| `/api/replay/range` | the replay recorder's days, first / last recorded second |
+| `/api/replay/chunk?t=&min=1..10&step=1\|2\|5\|10` | all recorded aircraft for 1–10 minutes from `t` (samples, labels, Comm-B, events, METAR) |
 | `/app`, `/app.webmanifest` | the mobile app and its web-app manifest |
 | `/api/aircraft` | targets, `feed_age`, `error`, `feed_lost`, `version` |
 | `/api/navaids?clat=&clon=&nmr=` | airports / navaids / waypoints within `nmr` NM |

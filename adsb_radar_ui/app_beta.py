@@ -10,6 +10,7 @@ import config
 import ehs
 import tracks
 import movements
+import replay
 
 app = Flask(__name__, static_url_path="/static")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -549,6 +550,10 @@ def fetch_data():
                 _ehs.set_feed(new_data.get("aircraft") or [])     # JSON-feed positions as references
                 _merge_live(new_data.get("aircraft") or [])      # then the fresher ADS-B positions
                 _mark_movements(new_data.get("aircraft") or [])  # go-arounds / landings / departures
+                try:
+                    _replay.add(new_data.get("aircraft") or [], commb=_commb_for_replay)   # the replay recorder
+                except Exception as e:
+                    print(f"[replay] {e}", flush=True)
                 _cache["data"] = new_data
                 _cache["err"] = new_err
                 _cache["ok_ts"] = time.time()
@@ -576,7 +581,30 @@ _ehs = ehs.EhsReceiver(config.BEAST_HOST, config.BEAST_PORT, config.MAG_DECLINAT
 _ehs.on_position = lambda icao, t, lat, lon, alt: _tracks.add(icao, t, lat, lon, alt, tracks.SRC_ADSB)
 _ehs.start()
 # EFHK go-arounds (the GA mark in the labels), landings and departures (EFHK traffic window)
-_moves = movements.MovementDetector(on_event=_tracks.add_event)
+# the replay recorder (replay.py): every second, every aircraft within REPLAY_RANGE_NM, kept REPLAY_DAYS
+_replay = replay.ReplayRecorder(config.REPLAY_DIR, config.REPLAY_DAYS, config.REPLAY_RANGE_NM,
+                                (config.CENTER_LAT, config.CENTER_LON), config.REPLAY_MIN_FREE_GB)
+_replay.start()
+
+
+def _movement_event(ev):
+    _tracks.add_event(ev)
+    _replay.add_event(ev)
+
+
+_moves = movements.MovementDetector(on_event=_movement_event)
+
+
+def _commb_for_replay(icao):
+    """The extended label's Comm-B values of one aircraft for the replay (without the ages), or None."""
+    d = _ehs.get(icao)
+    if not any(d.get(k) for k in ("b50", "b60", "sel", "ap", "nacp", "wspd", "temp")):
+        return None
+    out = {k: v for k, v in d.items() if k not in ("icao", "ehs", "decl") and v is not None}
+    for k in ("b50", "b60"):
+        if out.get(k):
+            out[k] = {kk: vv for kk, vv in out[k].items() if kk != "age"}
+    return out
 
 
 def _mark_movements(objs):
@@ -596,6 +624,8 @@ def _qnh_keeper():
             e = wx_get("EFHK")
             q = _parse_qnh(e["metar"]) if e["metar"] else None
             _moves.set_qnh(q)
+            if e["metar"]:
+                _replay.add_metar("EFHK", e["metar"])
             if q is None:
                 wait = 60
         except Exception as e:
@@ -1118,7 +1148,37 @@ def api_ehs_status():
     st = _ehs.status()
     st["tracks"] = _tracks.status()
     st["movements"] = _moves.status()
+    st["replay"] = _replay.status()
     return jsonify(st)
+
+
+@app.route("/api/replay/range")
+def api_replay_range():
+    """What the replay recorder has: the days on disk with their recorded minutes, first / last second."""
+    days = _replay.days_info()
+    return jsonify({"days": days, "first": next((d["first"] for d in days if d["first"]), None),
+                    "last": next((d["last"] for d in reversed(days) if d["last"]), None),
+                    "days_kept": config.REPLAY_DAYS, "range_nm": config.REPLAY_RANGE_NM, "error": _replay.error})
+
+
+@app.route("/api/replay/chunk")
+def api_replay_chunk():
+    """All recorded aircraft for 1-10 minutes from ?t=<epoch>, every ?step=1|2|5|10 seconds (the replay)."""
+    try:
+        t = float(request.args.get("t", ""))
+    except ValueError:
+        abort(400)
+    try:
+        minutes = int(request.args.get("min", "1"))
+        step = int(request.args.get("step", "1"))
+    except ValueError:
+        abort(400)
+    if step not in (1, 2, 5, 10):
+        abort(400)
+    r = _json_response(_replay.chunk(t, minutes, step))
+    if t + max(1, min(10, minutes)) * 60 < time.time() - 120:
+        r.headers["Cache-Control"] = "public, max-age=86400"      # a finished past minute never changes
+    return r
 
 
 @app.route("/api/track/<icao>")

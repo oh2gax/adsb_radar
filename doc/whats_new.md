@@ -7,6 +7,11 @@ Format: a version starts with `## v.DDMMYYYY — title`; under it bullets (`- `,
 sub-bullets indented by two spaces) or plain paragraphs. **bold**, *italic* and
 `code` are shown as such.
 
+## v.05112026 — Replay recording starts
+
+- **Replay is coming** — the radar now records everything it shows, every second, for the last **30 days**: every aircraft within 150 NM of EFHK with its labels and the extended label's values, the go-arounds, landings and departures, and the METARs. The replay controls on the scope (play back any moment, 1×–60×, jump to a UTC time, share a link) come in the next version; recording starts now so that there are days of traffic to play back.
+- **Landings** — an aircraft passing over the runway higher up (above 1000 ft) is no longer counted as a landing in the EFHK traffic list.
+
 ## v.04112026 — Mobile app, go-around alarm, history line of the selected aircraft, TopSky labels with an extended label, EFHK traffic and METAR & TAF windows, move and zoom the map with the mouse, 1-second updates, What's new, own position
 
 - **Mobile app** — open **radar.oh2gax.org/app** on a phone (or the *Mobile version* link under the logo): the scope full screen, all choices in the **☰** menu, in the ATC Gray style. *Add to Home Screen* in the browser makes it open like an app.
