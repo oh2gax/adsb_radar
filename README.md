@@ -61,7 +61,7 @@ top-left logo; nothing has to be edited by hand.
   close, on / off buttons (dark = on), button rows for choices, « hides the pane
 - **TRAFFIC** window: all aircraft in a movable / resizable table, sortable, a row click selects the aircraft
   (`static/js/trafficlist.js`)
-- Four themes, label overlap avoidance, ICAO24 hex range filter
+- Four themes, label overlap avoidance, a filter by ICAO24 code / range, registration or callsign (`*` = any), Solo (only the selected aircraft)
 - "FEED LOST" warning when the feed stops; targets are cleared after 30 s
 - All viewer settings are kept in the browser (localStorage); "Reset UI" clears them
 

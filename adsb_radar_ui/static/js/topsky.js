@@ -155,7 +155,7 @@ const Topsky = (() => {
       }
       g.strokeStyle = it.sel ? P.text : P.leader; g.lineWidth = 1;
       g.beginPath(); g.moveTo(it.p.x + R.ux * 7, it.p.y + R.uy * 7); g.lineTo(R.ax, R.ay); g.stroke();
-      g.fillStyle = P.text;
+      g.fillStyle = it.flag && P.emg ? P.emg : P.text;
       it.lines.forEach((t, i) => g.fillText(t, R.x + 2, R.y + 1 + i * LH));
       // alarms after the callsign, in red: an emergency squawk, the go-around mark GA (flashing: gaOn)
       let ax = R.x + 2 + g.measureText(it.lines[0] + ' ').width;

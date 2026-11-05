@@ -8,13 +8,13 @@
  * update (ingestAircraft), so the scope behaves exactly as live.
  *
  * The bar at the bottom of the scope: REPLAY / LIVE, the day (◀ day ▶, the last REPLAY_DAYS days), a
- * link to share, −10 / −1 min, play / pause, +1 / +10 min, the replay time, a UTC time box (14:40,
- * 1440, 14:40:30), the speeds 1×–60×, and a 24-hour slider with the day's go-arounds. An inverted
+ * link to share, −10 / −1 min, play / pause, +1 / +10 min, the replay time, the UTC time as two lists
+ * HH : MM with Go (they follow the replay time until changed), the speeds 1×–60×, and a 24-hour slider with the day's go-arounds. An inverted
  * banner at the top of the scope says REPLAY. A link /?replay=2026-11-04T15:33Z&speed=10&sel=461AAA
  * &c=60.32,24.96&r=20 opens that moment.
  *
  * The mobile app (/app, window.RADAR_APP) gets the same controls as a sheet at the bottom of the scope
- * (bigger buttons, the phone's number keyboard for the UTC time, Share instead of Link); its top bar
+ * (bigger buttons, the HH : MM lists open as the phone's scroll wheels, Share instead of Link); its top bar
  * says REPLAY instead of a banner (app.js), and /app?replay=… opens a moment there.
  */
 (function () {
@@ -28,6 +28,8 @@
   const DAY = 86400, CHUNK_S = 300, CHUNK_MIN = 5;
   const SPEEDS = [1, 2, 5, 10, 30, 60];
   const WD = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+  const HM_HTML = `<label><span class="rp-utcl">UTC </span><select id="rpHH" aria-label="Hour (UTC)">${Array.from({ length: 24 }, (_, i) => `<option>${pad(i)}</option>`).join('')}</select></label>` +
+    `<span class="rp-colon">:</span><select id="rpMM" aria-label="Minute">${Array.from({ length: 60 }, (_, i) => `<option>${pad(i)}</option>`).join('')}</select>`;
   const GA_MARK_SEC = 1800;              // a GA mark lasts until the landing, at most 30 min (as live)
 
   const S = {
@@ -231,7 +233,7 @@
         <button type="button" class="rp-b rp-play" data-a="play" title="Play / pause (space)">❚❚</button>
         <button type="button" class="rp-b" data-j="60">+1 min</button><button type="button" class="rp-b" data-j="600">+10 min</button>
         <span id="rpTime" class="rp-time">--:--:--Z</span>
-        <form id="rpForm" class="rp-form" autocomplete="off"><label>UTC <input id="rpUtc" maxlength="8" placeholder="14:40" title="Jump to a UTC time of the chosen day: 14:40, 1440 or 14:40:30"></label><button type="submit" class="rp-b">Go</button></form>
+        <form id="rpForm" class="rp-form" autocomplete="off">${HM_HTML}<button type="submit" class="rp-b" title="Jump to this UTC time of the chosen day (paused)">Go</button></form>
         <span class="rp-fill"></span><span class="rp-seg" id="rpSpeeds">${SPEEDS.map(v => `<button type="button" class="rp-b" data-sp="${v}">${v}×</button>`).join('')}</span></div>
       <div class="rp-row rp-slrow"><div class="rp-slider"><div id="rpMarks" class="rp-marks"></div>
         <input id="rpSlider" type="range" min="0" max="86399" step="1" value="0" aria-label="Time of the day (UTC)"><div class="rp-ticks">${[0, 3, 6, 9, 12, 15, 18, 21, 24].map(h => `<span style="left:${h / 24 * 100}%">${pad(h)}</span>`).join('')}</div></div></div>
@@ -242,9 +244,9 @@
     <div id="rpBar" class="rp-window app-rp scope-obst" hidden>
       <div class="rp-row"><span id="rpTime" class="rp-time">LIVE</span><span class="rp-fill"></span>
         <button type="button" class="rp-b" data-a="link" title="Share a link to this moment">Share</button><button type="button" class="rp-b" data-a="live">● LIVE</button><button type="button" class="rp-b" data-a="close" aria-label="Close (back to live)">✕</button></div>
-      <div class="rp-row"><button type="button" class="rp-b" data-a="dprev" aria-label="The day before">◀</button><select id="rpDay" aria-label="The day (UTC)"></select><button type="button" class="rp-b" data-a="dnext" aria-label="The day after">▶</button>
+      <div class="rp-row app-rp-day"><button type="button" class="rp-b" data-a="dprev" aria-label="The day before">◀</button><select id="rpDay" aria-label="The day (UTC)"></select><button type="button" class="rp-b" data-a="dnext" aria-label="The day after">▶</button>
         <span class="rp-fill"></span>
-        <form id="rpForm" class="rp-form" autocomplete="off"><label>UTC <input id="rpUtc" maxlength="8" inputmode="numeric" placeholder="1440" aria-label="Jump to a UTC time of the chosen day: 1440 or 144030"></label><button type="submit" class="rp-b">Go</button></form></div>
+        <form id="rpForm" class="rp-form" autocomplete="off">${HM_HTML}<button type="submit" class="rp-b" aria-label="Jump to this UTC time of the chosen day">Go</button></form></div>
       <div class="rp-row rp-slrow"><div class="rp-slider"><div id="rpMarks" class="rp-marks"></div>
         <input id="rpSlider" type="range" min="0" max="86399" step="1" value="0" aria-label="Time of the day (UTC)"><div class="rp-ticks">${[0, 6, 12, 18, 24].map(h => `<span style="left:${h / 24 * 100}%">${pad(h)}</span>`).join('')}</div></div></div>
       <div class="rp-row app-rp-big"><button type="button" class="rp-b" data-j="-600">−10′</button><button type="button" class="rp-b" data-j="-60">−1′</button>
@@ -266,7 +268,7 @@
     let html = '';
     for (let k = 0; k < keep; k++) {
       const d0 = today - k * DAY, iso = new Date(d0 * 1000).toISOString().slice(0, 10);
-      html += `<option value="${d0}"${have.has(iso) ? '' : ' disabled'}${S.day === d0 ? ' selected' : ''}>${WD[new Date(d0 * 1000).getUTCDay()]} ${APP ? fmtD(d0).slice(0, 6) : fmtD(d0)}</option>`;
+      html += `<option value="${d0}"${have.has(iso) ? '' : ' disabled'}${S.day === d0 ? ' selected' : ''}>${APP ? fmtD(d0).slice(0, 6) : WD[new Date(d0 * 1000).getUTCDay()] + ' ' + fmtD(d0)}</option>`;
     }
     daySel.innerHTML = html;
   }
@@ -291,6 +293,7 @@
     document.querySelectorAll('#rpSpeeds [data-sp]').forEach(b => b.classList.toggle('on', +b.dataset.sp === S.speed));
     bar.querySelector('[data-a="play"]').textContent = S.playing ? '❚❚' : '▶';
     document.getElementById('rpTime').textContent = S.active ? fmtT(S.t) : 'LIVE';
+    syncHM();
     if (S.active && document.activeElement !== slider) slider.value = String(Math.floor(S.t - S.day));
     if (S.active && daySel.value !== String(S.day)) daySel.value = String(S.day);
     const r = S.range;
@@ -323,21 +326,29 @@
     if (!S.active) start(d0 + tod, { play: false }); else seek(d0 + tod);
   });
   slider.addEventListener('input', () => { if (!S.active) return; seek(S.day + +slider.value); });
-  // the UTC time box: 14:40, 1440, 14:40:30 on the chosen day
+  // the UTC time: HH : MM lists and Go, on the chosen day. The lists show the replay time (live: now)
+  // until one is changed; then they keep the choice until Go.
+  const hhSel = document.getElementById('rpHH'), mmSel = document.getElementById('rpMM');
+  let hmDirty = false;
+  hhSel.addEventListener('change', () => { hmDirty = true; });
+  mmSel.addEventListener('change', () => { hmDirty = true; });
+  function syncHM() {
+    if (hmDirty || document.activeElement === hhSel || document.activeElement === mmSel) return;
+    const d = new Date((S.active ? S.t : Date.now() / 1000) * 1000), h = pad(d.getUTCHours()), m = pad(d.getUTCMinutes());
+    if (hhSel.value !== h) hhSel.value = h;
+    if (mmSel.value !== m) mmSel.value = m;
+  }
   document.getElementById('rpForm').addEventListener('submit', e => {
     e.preventDefault();
-    const inp = document.getElementById('rpUtc');
-    const m = /^\s*(\d{1,2}):?(\d{2})(?::?(\d{2}))?\s*z?\s*$/i.exec(inp.value || '');
-    if (!m || +m[1] > 23 || +m[2] > 59 || (m[3] && +m[3] > 59)) { inp.classList.add('invalid'); return; }
-    inp.classList.remove('invalid');
+    hmDirty = false;
     const d0 = S.active ? S.day : dayStart(Date.now() / 1000);
-    const t = d0 + (+m[1]) * 3600 + (+m[2]) * 60 + (+(m[3] || 0));
+    const t = d0 + (+hhSel.value) * 3600 + (+mmSel.value) * 60;
     if (t > Date.now() / 1000) { S.note = 'That time is still ahead'; updateUi(); return; }
     const wasPlaying = S.playing;
     if (!S.active) start(t, { play: false });
     else { seek(t); S.playing = false; }
     S.note = wasPlaying ? 'Paused at ' + fmtT(t) : '';
-    inp.value = ''; inp.blur();
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   });
   document.addEventListener('keydown', e => {
     if (!S.active || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;

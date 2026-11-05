@@ -72,6 +72,7 @@ body.app-body { background: var(--radar-bg); font-family: var(--amono); -webkit-
 .app-tbl tr[data-icao]:active td, .app-tbl tr.sel td { background: var(--ag2); }
 .app-tbl tr.live td.cs { text-decoration: underline dotted; }
 .app-tbl td.ga { font-weight: 700; }
+.app-page .app-tbl td.rf { color: #c00000; font-weight: 700; }
 .app-tbl tr.day td { text-align: center; opacity: 0.75; padding: 6px; border: 0; }
 .app-none { padding: 14px 12px; }
 .app-wx { padding: 4px 12px 16px; }
@@ -83,6 +84,7 @@ body.app-body { background: var(--radar-bg); font-family: var(--amono); -webkit-
 .app-wx-form input { width: 64px; font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--ak); background: var(--ag); color: var(--ak);
   text-transform: uppercase; border-radius: 0; -webkit-user-select: text; user-select: text; }
 .app-wx-form button { border: 1px solid var(--ak); background: transparent; padding: 6px 10px; font-size: 12px; }
+.app-filter { display: flex; margin-top: 4px; } .app-filter input { flex: 1; width: auto; font-size: 16px; }
 .app-news { padding: 4px 14px 16px; }
 .app-news h3 { font-size: 13px; letter-spacing: 1px; margin: 16px 0 6px; border-bottom: 1px solid var(--ak); padding-bottom: 4px; }
 .app-news ul { margin: 0; padding-left: 18px; } .app-news li { margin: 0 0 7px; line-height: 1.4; }
@@ -141,6 +143,14 @@ body.app-replay .app-bar .app-ib:active { background: #333; }
 .app-rp select { font-size: 14px; height: 38px; padding: 0 6px; border-radius: 0; max-width: 128px; }
 .app-rp .rp-form input { width: 58px; height: 38px; box-sizing: border-box; font-size: 16px; border-radius: 0; -webkit-user-select: text; user-select: text; }   /* 16 px: iOS does not zoom */
 .app-rp .rp-form button { min-width: 44px; }
+.app-rp .rp-form select { max-width: none; font-size: 16px; padding: 0 4px; }
+/* the day and the time on one row, also on a 360 px phone: no weekday, no "UTC" word (the time says Z) */
+.app-rp-day { gap: 4px !important; }
+.app-rp-day > .rp-b { min-width: 34px; padding: 0 6px; }
+.app-rp-day .rp-form { gap: 4px; }
+.app-rp-day .rp-form select { padding: 0 2px; }
+.app-rp-day .rp-form button { min-width: 40px; }
+.app-rp .rp-utcl { display: none; }
 .app-rp .rp-slider { padding: 12px 4px 15px; }
 .app-rp .rp-slider input[type=range] { height: 28px; }
 .app-rp-big .rp-b { flex: 1; min-height: 46px; font-size: 15px; }

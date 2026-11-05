@@ -53,7 +53,7 @@
     view: () => (($('rangeNm') || {}).value || '') + ' NM · ' + optText('themeSelect'),
     windows: () => ['tlOn', 'trOn', 'wxOn'].filter(id => $(id) && $(id).checked).length + ' open',
     labels: () => optText('labelStyle').replace('TOPSKY', 'TopSky').replace('CLASSIC', 'Classic'),
-    targets: () => [$('showVector') && $('showVector').checked ? 'vector' : '', $('showTrail') && $('showTrail').checked ? 'trail' : ''].filter(Boolean).join(' · '),
+    targets: () => [$('showVector') && $('showVector').checked ? 'vector' : '', $('showTrail') && $('showTrail').checked ? 'trail' : '', $('soloOn') && $('soloOn').checked ? 'SOLO' : ''].filter(Boolean).join(' · '),
     map: () => (side.querySelectorAll('#overlayList input[data-ovcat]:checked').length) + ' line sets',
     alt: () => { const q = $('qnhInput'); return q && q.value ? 'Q' + String(q.value).padStart(4, '0') + ($('qnhAuto') && $('qnhAuto').checked ? ' auto' : '') : ''; },
     own: () => ($('ownPosOn') && $('ownPosOn').checked ? 'shown' : 'off'),

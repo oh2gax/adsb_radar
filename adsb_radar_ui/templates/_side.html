@@ -63,6 +63,7 @@
             <label class="tg" title="Squawk"><input type="checkbox" id="showSquawk" checked hidden>SQK</label>
             <label class="tg" title="Registration"><input type="checkbox" id="showReg" checked hidden>REG</label>
             <label class="tg" title="Aircraft type"><input type="checkbox" id="showType" hidden>TYPE</label>
+            <label class="tg"><input type="checkbox" id="rpfOn" hidden>RPF</label>
           </span></div>
           <div class="lp-r"><span class="lp-k"></span><label class="tg" title="Move the labels so that they do not cover each other"><input type="checkbox" id="preventOverlap" checked hidden>NO OVERLAP</label></div>
         </div>
@@ -85,6 +86,7 @@
               <option value="60" data-s="1 min" selected>1 min</option>
             </select><span class="seg" data-for="trailLenSec"></span></div>
           <div class="lp-r" title="A thin line of the whole flight of the selected aircraft"><span class="lp-k">History</span><label class="tg"><input type="checkbox" id="showHistory" checked hidden>ON</label><span class="note">line of the selected</span></div>
+          <div class="lp-r" title="SOLO: with an aircraft selected (click it on the scope or in the TRAFFIC window), only it is drawn; release it (empty scope or Esc) to see all again"><span class="lp-k">Solo</span><label class="tg"><input type="checkbox" id="soloOn" hidden>ON</label><span class="note">only the selected</span></div>
           <div class="lp-r" title="Remove an aircraft not heard for this long"><span class="lp-k">Stale</span>
             <select id="staleTimeout">
               <option value="0">Off</option>
@@ -159,10 +161,10 @@
       </div>
 
       <div class="lp-sec" data-sec="filter" data-closed="1">
-        <div class="lp-h">ICAO24 FILTER<span class="lp-x"><span class="lp-sum"></span><i></i></span></div>
+        <div class="lp-h">FILTER<span class="lp-x"><span class="lp-sum"></span><i></i></span></div>
         <div class="lp-b">
-          <textarea id="icaoFilter" placeholder="e.g. 600000-6FFFFF, 7C0000-7FFFFF"></textarea>
-          <div class="lp-r"><button type="button" id="applyFilter">Apply</button><span class="note">empty = all aircraft</span></div>
+          <textarea id="icaoFilter" placeholder="e.g. 461AAA, OH-LVA, FIN*, 600000-6FFFFF" title="Only these aircraft: ICAO24 codes (461AAA), ranges (600000-6FFFFF), registrations (OH-LVA) or callsigns (FIN7LH), separated by commas or spaces; * = any characters (FIN*, OH-*). Enter or Apply."></textarea>
+          <div class="lp-r"><button type="button" id="applyFilter">Apply</button><span class="note">ICAO24, REG, callsign, * · empty = all</span></div>
         </div>
       </div>
 

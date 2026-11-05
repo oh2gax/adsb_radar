@@ -72,7 +72,18 @@
     const qi = $('qnhInfo');
     $('appQnh').textContent = qi && qi.textContent ? qi.textContent : `QNH ${Math.round(qnh)}`;
     $('appWake').checked = ls('appWake') === '1';
+    const fta = $('icaoFilter');
+    if (fta && document.activeElement !== $('appFilter')) $('appFilter').value = fta.value;
   }
+  // FILTER: the desktop's filter box and Apply (radar.js)
+  $('appFilterForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const fta = $('icaoFilter'), btn = $('applyFilter');
+    if (!fta || !btn) return;
+    fta.value = ($('appFilter').value || '').trim(); btn.click();
+    $('appFilter').blur();
+    toast(fta.value ? 'Filter: ' + fta.value : 'Filter off: all aircraft', 2000);
+  });
 
   // ---- menu ----
   const drawer = $('appDrawer'), shade = $('appShade');
@@ -282,12 +293,14 @@
   const KINDS = ['arr', 'dep', 'both'], HOURS = [1, 3, 6, 12, 24];
   let trKind = KINDS.includes(ls('trKind')) ? ls('trKind') : 'both';
   let trHours = HOURS.includes(+ls('trHours')) ? +ls('trHours') : 3;
+  let trIdCol = ls('trIdCol') === 'icao' ? 'icao' : 'reg', trLast = null;
   let trSub = '', trTimer = null, trSeq = 0;
   const hhmm = t => { const d = new Date(t * 1000); return pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()); };
   const dayKey = t => new Date(t * 1000).toISOString().slice(0, 10);
   function trButtons() {
     document.querySelectorAll('#trKinds button').forEach(b => b.classList.toggle('on', b.dataset.kind === trKind));
     document.querySelectorAll('#trHours button').forEach(b => b.classList.toggle('on', +b.dataset.hours === trHours));
+    document.querySelectorAll('#trIdCol button').forEach(b => b.classList.toggle('on', b.dataset.idcol === trIdCol));
   }
   function trRender(d) {
     const span = trHours === 24 ? '1 d' : trHours + ' h';
@@ -299,9 +312,9 @@
     if (d.error) { body.innerHTML = `<p class="app-none">${esc(d.error)}</p>`; return; }
     const rows = d.rows || [];
     if (!rows.length) { body.innerHTML = `<p class="app-none">No ${what} in the last ${span}.</p>`; return; }
-    const both = trKind === 'both', rpOn = !!RP(), cols = (both ? 6 : 5) + (rpOn ? 1 : 0);
+    const both = trKind === 'both', rpOn = !!RP(), cols = (both ? 7 : 6) + (rpOn ? 1 : 0);
     let html = '<table class="app-tbl"><thead><tr><th>UTC</th>' + (both ? '<th>A/D</th>' : '') +
-               '<th>CALLSIGN</th><th>TYPE</th><th>RWY</th><th></th>' + (rpOn ? '<th></th>' : '') + '</tr></thead><tbody>';
+               `<th>CALLSIGN</th><th>${trIdCol === 'icao' ? 'ICAO24' : 'REG'}</th><th>TYPE</th><th>RWY</th><th></th>` + (rpOn ? '<th></th>' : '') + '</tr></thead><tbody>';
     let prev = dayKey(d.now || Date.now() / 1000);
     for (const r of rows) {
       const day = dayKey(r.t);
@@ -309,9 +322,10 @@
       const ga = r.ga ? (r.ga > 1 ? 'GA' + r.ga : 'GA') : '';
       const tag = [r.callsign || r.icao, hhmm(r.t), r.kind === 'arr' ? 'ARR' : 'DEP', r.rwy || '', ga].filter(Boolean).join(' ');
       const live = window.radarHasAircraft(r.icao);
+      const rfc = window.radarRpfCat ? window.radarRpfCat(r.icao) : '';
       html += `<tr data-icao="${esc(r.icao)}" data-t="${r.t}" data-kind="${r.kind}" data-tag="${esc(tag)}"${live ? ' class="live"' : ''}>` +
               `<td>${hhmm(r.t)}</td>` + (both ? `<td>${r.kind === 'arr' ? 'ARR' : 'DEP'}</td>` : '') +
-              `<td class="cs">${esc(r.callsign || r.icao)}</td><td>${esc(r.type || '')}</td><td>${esc(r.rwy || '---')}</td><td class="ga">${ga}</td>` +
+              `<td class="cs${rfc ? ' rf' : ''}">${esc(r.callsign || r.icao)}${rfc ? ` <span class="rfc">${rfc}</span>` : ''}</td><td>${esc(trIdCol === 'icao' ? r.icao : (r.reg || ''))}</td><td>${esc(r.type || '')}</td><td>${esc(r.rwy || '---')}</td><td class="ga">${ga}</td>` +
               (rpOn ? `<td class="app-trp" aria-label="Replay from ${r.kind === 'arr' ? '5' : '2'} min before">▶</td>` : '') + '</tr>';
     }
     body.innerHTML = html + '</tbody></table>';
@@ -323,10 +337,11 @@
     const my = ++trSeq;
     try {
       const d = await (await fetch(`/api/efhk_traffic?kind=${trKind}&hours=${trHours}`, { cache: 'no-store' })).json();
-      if (my === trSeq) { trRender(d); updateBar(); }
+      if (my === trSeq) { trLast = d; trRender(d); updateBar(); }
     } catch (_) { if (my === trSeq) $('trBodyM').innerHTML = '<p class="app-none">Radar server not reachable.</p>'; }
   }
   $('trKinds').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; trKind = b.dataset.kind; ls('trKind', trKind); $('trBodyM').textContent = 'Loading…'; trLoad(); });
+  $('trIdCol').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; trIdCol = b.dataset.idcol; ls('trIdCol', trIdCol); trButtons(); if (trLast) trRender(trLast); });
   $('trHours').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; trHours = +b.dataset.hours; ls('trHours', String(trHours)); $('trBodyM').textContent = 'Loading…'; trLoad(); });
   $('trBodyM').addEventListener('click', async e => {
     const tr = e.target.closest('tr[data-icao]'); if (!tr) return;

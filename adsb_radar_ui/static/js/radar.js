@@ -98,7 +98,22 @@ window.requestDraw = requestDraw;
 // any change in the side panel or a window redraws at once
 for(const ev of ['input', 'change', 'click', 'keyup']) document.addEventListener(ev, requestDraw, true);
 window.addEventListener('resize', () => { resizeCanvas(); markStaticDirty(); });
-let icaoRanges = [];  // parsed ICAO24 filter, set after parseRanges is defined
+let icaoRanges = {ranges: [], words: [], n: 0};  // the FILTER (ICAO24 / range / REG / callsign), parsed by parseFilter
+let soloOn = (localStorage.getItem('soloOn') ?? '0') === '1';
+// RPF: the labels of the aircraft on the list of /api/rpf (rpf.py) in red; in the lists also M / G
+let rpfOn = (localStorage.getItem('rpfOn') ?? '0') === '1', rpfSet = new Map(), rpfAt = 0;
+async function fetchRpf(){
+  try {
+    const j = await (await fetch('/api/rpf')).json();
+    const m = new Map(Object.entries(j.cat || {}));
+    for(const h of j.hex || []) if(!m.has(h)) m.set(h, 'M');
+    rpfSet = m; rpfAt = Date.now(); requestDraw();
+  } catch(_) {}
+}
+const rpfFlag = hex => rpfOn && rpfSet.has(hex);
+const rpfCat = hex => (rpfFlag(hex) && rpfSet.get(hex)) || '';
+window.radarRpfFlag = hex => rpfFlag(String(hex || '').toUpperCase());   // the EFHK traffic lists (traffic.js, app.js)
+window.radarRpfCat = hex => rpfCat(String(hex || '').toUpperCase());   // SOLO: only the selected aircraft is drawn
 let aircraft = new Map();
 let trails = new Map();
 let trailLastSample = new Map();
@@ -126,6 +141,7 @@ const btnZoomIn = document.getElementById('btnZoomIn');
 const btnZoomOut = document.getElementById('btnZoomOut');
 const icaoFilterTA = document.getElementById('icaoFilter');
 const applyFilterBtn = document.getElementById('applyFilter');
+const soloCb = document.getElementById('soloOn');
 const showCallsignCb = document.getElementById('showCallsign');
 const showAltCb = document.getElementById('showAlt');
 const showHdgCb = document.getElementById('showHdg');
@@ -171,6 +187,11 @@ if(showAltCb) showAltCb.checked = showAlt;
 if(showHdgCb) showHdgCb.checked = showHdg;
 if(showTrailCb) showTrailCb.checked = showTrail;
 if(showHistoryCb) showHistoryCb.checked = showHistory;
+if(soloCb) soloCb.checked = soloOn;
+const rpfCb = document.getElementById('rpfOn');
+if(rpfCb){ rpfCb.checked = rpfOn; rpfCb.onchange = () => { rpfOn = rpfCb.checked; localStorage.setItem('rpfOn', rpfOn ? '1' : '0'); if(rpfOn && Date.now() - rpfAt > 3600e3) fetchRpf(); requestDraw(); }; }
+if(rpfOn) fetchRpf();
+setInterval(() => { if(rpfOn && Date.now() - rpfAt > 6 * 3600e3) fetchRpf(); }, 600e3);
 
 if(trailLenSel) trailLenSel.value = String(trailLenSec);
 if(showSpdCb) showSpdCb.checked = showSpd;
@@ -247,7 +268,9 @@ if(showSquawkCb) showSquawkCb.onchange = () => { showSquawk = showSquawkCb.check
 if(showVectorCb) showVectorCb.onchange = () => { showVector = showVectorCb.checked; savePrefs(); };
 if(preventOverlapCb) preventOverlapCb.onchange = () => { preventOverlap = preventOverlapCb.checked; savePrefs(); };
 if(vectorMinsSel) vectorMinsSel.onchange = () => { vectorMins = parseFloat(vectorMinsSel.value)||0.5; savePrefs(); };
-if(applyFilterBtn) applyFilterBtn.onclick = () => { localStorage.setItem('icaoRanges', icaoFilterTA.value.trim()); icaoRanges = parseRanges(icaoFilterTA.value.trim()); };
+if(applyFilterBtn) applyFilterBtn.onclick = () => { localStorage.setItem('icaoRanges', icaoFilterTA.value.trim()); icaoRanges = parseFilter(icaoFilterTA.value.trim()); requestDraw(); };
+if(icaoFilterTA) icaoFilterTA.addEventListener('keydown', e => { if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); applyFilterBtn && applyFilterBtn.click(); } });
+if(soloCb) soloCb.onchange = () => { soloOn = soloCb.checked; localStorage.setItem('soloOn', soloOn ? '1' : '0'); requestDraw(); };
 if(labelModeSel) labelModeSel.onchange = () => { labelMode = labelModeSel.value; savePrefs(); };
 if(labelStyleSel) labelStyleSel.onchange = () => {
   labelStyle = labelStyleSel.value === 'topsky' ? 'topsky' : 'classic';
@@ -629,29 +652,35 @@ function drawOwnPosition(cx, cy, R, obst){
 }
 
 // Utils
-function parseRanges(str){
-  if(!str) return [];
-  const parts = str.split(/[,;\s]+/).filter(Boolean);
-  const out = [];
-  for(const p of parts){
-    if(p.includes('-')){
-      const [a,b] = p.split('-').map(x => x.trim());
-      const lo = parseInt(a, 16), hi = parseInt(b, 16);
-      if(Number.isFinite(lo) && Number.isFinite(hi)) out.push([Math.min(lo,hi), Math.max(lo,hi)]);
-    } else {
-      const v = parseInt(p,16);
-      if(Number.isFinite(v)) out.push([v,v]);
-    }
+// The FILTER: entries separated by commas, spaces or new lines; an aircraft is shown when it matches one.
+//   461AAA          an ICAO24 code (also tried as a callsign, e.g. ABC123)
+//   600000-6FFFFF   a range of ICAO24 codes (both ends 6 hex digits)
+//   OH-LVA, FIN7LH  a registration or a callsign (case does not matter; OHLVA finds OH-LVA too)
+//   FIN*, OH-*      * = any characters
+function parseFilter(str){
+  const f = {ranges: [], words: [], n: 0};
+  for(const raw of String(str || '').split(/[,;\s]+/).filter(Boolean)){
+    const p = raw.toUpperCase();
+    const m = /^([0-9A-F]{6})-([0-9A-F]{6})$/.exec(p);
+    if(m){ const lo = parseInt(m[1], 16), hi = parseInt(m[2], 16); f.ranges.push([Math.min(lo, hi), Math.max(lo, hi)]); continue; }
+    if(/^[0-9A-F]{6}$/.test(p)){ const v = parseInt(p, 16); f.ranges.push([v, v]); }
+    const rx = t => new RegExp('^' + t.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+    // as written, against the callsign and the registration; without * also without dashes (OHLVA = OH-LVA)
+    f.words.push({re: rx(p), loose: p.includes('*') ? null : rx(p.replace(/-/g, ''))});
   }
-  return out;
+  f.n = f.ranges.length + f.words.length;
+  return f;
 }
-icaoRanges = parseRanges(localStorage.getItem('icaoRanges') || '');
-function inRanges(hex, ranges){
-  if(ranges.length === 0) return true;
-  const v = parseInt(hex, 16);
-  if(!Number.isFinite(v)) return false;
-  return ranges.some(([lo,hi]) => v >= lo && v <= hi);
+icaoRanges = parseFilter(localStorage.getItem('icaoRanges') || '');
+function filterPass(ac, f){
+  if(!f || !f.n) return true;
+  const v = parseInt(ac.hex, 16);
+  if(Number.isFinite(v) && f.ranges.some(([lo, hi]) => v >= lo && v <= hi)) return true;
+  const cs = String(ac.callsign || '').toUpperCase(), reg = String(ac.reg || '').toUpperCase(), reg0 = reg.replace(/-/g, '');
+  return f.words.some(w => (cs && w.re.test(cs)) || (reg && w.re.test(reg)) || (w.loose && reg0 && w.loose.test(reg0)));
 }
+// SOLO: with an aircraft selected, only it is drawn (the TRAFFIC window still lists the others)
+function soloHex(){ return soloOn ? selectedHex() : null; }
 function deg2rad(d){ return d*Math.PI/180; }
 function projectNm(lat, lon){
   const dLat = deg2rad(lat - center.lat);
@@ -1343,6 +1372,11 @@ function drawScope(){
   }
   setFill(colors.text); ctx.font = '12px ui-monospace, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   ctx.fillText(`Range: 0 – ${fmtRange(rangeNm)} NM`, 10, 8);
+  const solo = soloHex();
+  if(solo || icaoRanges.n){
+    const sa = solo ? aircraft.get(solo) : null;
+    ctx.fillText(solo ? `SOLO: ${(sa && (sa.callsign || sa.reg)) || solo}` : 'FILTER ON', 10, 24);
+  }
 
   window.labelBoxes = [];
   const ts = labelStyle === 'topsky' && typeof Topsky !== 'undefined' && tsUi;
@@ -1381,10 +1415,15 @@ function drawScope(){
     }
     if(!hasPos || posFrozen) continue; // treat as MODE-S below
 
-    if(!inRanges(ac.hex, ranges)) continue;
+    if(!filterPass(ac, ranges)) continue;
 
     const xy = projectNm(ac.lat, ac.lon);
     const rnm = Math.hypot(xy.x, xy.y);
+    if(solo && ac.hex !== solo){                       // SOLO: not drawn, still in the TRAFFIC window
+      const lbl = (labelMode === 'icao') ? ac.hex : (labelMode === 'callsign' ? (ac.callsign || ac.hex) : ((showCallsign && ac.callsign) ? ac.callsign : ac.hex));
+      posList.push({d:rnm, label: lbl, alt: ac.alt ?? NaN, hex: ac.hex, squawk: ac.squawk, vr: ac.vr, reg: ac.reg, type: ac.type, sel_alt_ft: ac.sel_alt_ft, sel_alt_hundreds: ac.sel_alt_hundreds});
+      continue;
+    }
 
     // Allow aircraft beyond the selected range to be visible:
     // draw them at scaled position even if they are beyond the ring
@@ -1456,7 +1495,7 @@ function drawScope(){
       const sq = ac.squawk ? String(ac.squawk).trim() : '';
       tsItems.push({key: ac.hex, p: {x: px, y: py}, lines, sel: isSel, ext,
                     alt: Number.isFinite(ac.alt) ? ac.alt : 99999, emg: Topsky.EMG.has(sq) ? sq : '',
-                    ga: ac.gaStart != null ? 'GA' : '', gaOn: gaVisible(ac, now)});
+                    ga: ac.gaStart != null ? 'GA' : '', gaOn: gaVisible(ac, now), flag: rpfFlag(ac.hex)});
       tsTargets.push([ac.hex, px, py]);
       if(isSel){ setStroke(colors.symbol); ctx.lineWidth = 1; ctx.strokeRect(px-9, py-9, 18, 18); }
       posList.push({d:rnm, label, alt: ac.alt ?? NaN, hex: ac.hex, squawk: ac.squawk, vr: ac.vr, reg: ac.reg, type: ac.type, sel_alt_ft: ac.sel_alt_ft, sel_alt_hundreds: ac.sel_alt_hundreds});
@@ -1524,6 +1563,8 @@ if(isTypeOn() && ac.type){ infoParts.push(ac.type); } /*TYPE_AFTER_REG*/
     }
     if(!placed){ placed = spiralFallback(px, py, m) || labelBoxFor('NE'); }
 
+    const fill0 = ctx.fillStyle;
+    if(rpfFlag(ac.hex) && !document.body.classList.contains('theme-full-el') && !document.body.classList.contains('theme-full-el-yellow')) ctx.fillStyle = '#ff2d2d';
     for(let i=0;i<lines.length;i++){
       const y = placed.ty - (lines.length-1-i)*lineH;
       if(i===0 && (squawkStr || gaStr)){
@@ -1547,6 +1588,7 @@ if(isTypeOn() && ac.type){ infoParts.push(ac.type); } /*TYPE_AFTER_REG*/
         ctx.fillText(lines[i], placed.tx, y);
       }
     }
+    ctx.fillStyle = fill0;
     window.labelBoxes.push({x1:placed.x1, y1:placed.y1, x2:placed.x2, y2:placed.y2});
 
     posList.push({d:rnm, label, alt: ac.alt ?? NaN, hex: ac.hex, squawk: ac.squawk, vr: ac.vr, reg: ac.reg, type: ac.type, sel_alt_ft: ac.sel_alt_ft, sel_alt_hundreds: ac.sel_alt_hundreds});
@@ -1574,7 +1616,7 @@ if(isTypeOn() && ac.type){ infoParts.push(ac.type); } /*TYPE_AFTER_REG*/
   const noPos = [];
   for(const ac of aircraft.values()){
     if(!ac.hex || drawnHex.has(ac.hex)) continue;
-    if(!inRanges(ac.hex, ranges)) continue;
+    if(!filterPass(ac, ranges)) continue;
     if(isStale(acState.get(ac.hex), now)) continue;
     let label = (labelMode==='callsign') ? (ac.callsign || ac.hex) : (labelMode==='icao'? ac.hex : ((showCallsign && ac.callsign)? ac.callsign : ac.hex));
     
@@ -1620,7 +1662,7 @@ const lis = rows.slice(0, 200).map(function(item){
   var nm = (item._rowType==='pos' && Number.isFinite(item.d)) ? item.d.toFixed(1) : '';
   var hex = escapeHTML(String(item.hex || ''));
   return '<tr data-hex="' + hex + '"' + (item.hex && item.hex === selNow ? ' class="sel"' : '') + '>'
-       + '<td class="tl-cs">' + escapeHTML(pure) + star + '</td><td>' + altToHTML(altStr) + '</td>'
+       + '<td class="tl-cs' + (rpfFlag(item.hex) ? ' rf' : '') + '">' + escapeHTML(pure) + star + (rpfCat(item.hex) ? ' <span class="rfc">' + rpfCat(item.hex) + '</span>' : '') + '</td><td>' + altToHTML(altStr) + '</td>'
        + '<td class="sq' + (emg ? ' emg' : '') + '">' + escapeHTML(sq) + '</td><td class="n">' + nm + '</td>'
        + '<td>' + escapeHTML(item.reg || '') + '</td><td>' + escapeHTML(item.type || '') + '</td><td class="tl-ext">' + ext + '</td></tr>';
 });

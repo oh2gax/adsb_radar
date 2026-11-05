@@ -12,6 +12,7 @@ import tracks
 import movements
 import replay
 import navdata
+import rpf
 
 app = Flask(__name__, static_url_path="/static")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1478,5 +1479,37 @@ _overlays_reload = register_overlays(app, config.CENTER_LAT, config.CENTER_LON, 
                                      exclude_names={'efhk_coast_demo','efhk_ils_demo','Navaids','efhk_nav'},
                                      extra_dirs=_overlay_dirs, version=_overlay_version)
 threading.Thread(target=_navdata_keeper, daemon=True).start()
+
+
+# the RPF list (rpf.py): loaded at the start, checked once a day (first 90 s after the start)
+_rpf = {"list": rpf.current(), "error": None}
+
+
+def _rpf_keeper():
+    if os.environ.get("RPF_AUTO", "1") in ("0", "false", "no"):
+        return
+    time.sleep(90)
+    while True:
+        try:
+            changed, msg = rpf.update()
+            if changed or not _rpf["list"]:
+                _rpf["list"] = rpf.current()
+            _rpf["error"] = None
+            print(f"[rpf] {msg}", file=sys.stderr)
+        except Exception as e:                        # keep the old list
+            _rpf["error"] = str(e)[:200]
+            print(f"[rpf] check failed: {e}", file=sys.stderr)
+        time.sleep(24 * 3600)
+
+
+@app.route("/api/rpf")
+def api_rpf():
+    l = _rpf["list"] or {}
+    resp = _json_response({"updated": l.get("updated"), "hex": l.get("hex", []), "cat": l.get("cat", {})})
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
+
+
+threading.Thread(target=_rpf_keeper, daemon=True).start()
 if __name__ == "__main__":
     app.run(host=config.HOST, port=config.PORT, debug=False)

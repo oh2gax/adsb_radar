@@ -4,7 +4,8 @@
  * BOTH and 1h / 3h / 6h / 12h / 1d; newest first, a line at each change of the UTC day.
  * Click a row: the track of that flight is drawn on the scope (from tracks.db, 24 h). An aircraft
  * still on the scope also blinks and is selected (its history line follows it); an earlier flight
- * gets a tag at its end. Click the row again (or Esc, or empty scope) to remove it. Choices, place
+ * gets a tag at its end. Click the row again (or Esc, or empty scope) to remove it. REG / ICAO24
+ * chooses the column after the callsign (the registration by default). Choices, place
  * and size are remembered; the window asks for new rows every 60 s while it is open.
  */
 (function () {
@@ -18,6 +19,7 @@
   const KINDS = ['arr', 'dep', 'both'], HOURS = [1, 3, 6, 12, 24];
   let kind = KINDS.includes(ls('trKind')) ? ls('trKind') : 'both';
   let hours = HOURS.includes(+ls('trHours')) ? +ls('trHours') : 3;
+  let idCol = ls('trIdCol') === 'icao' ? 'icao' : 'reg';
   let on = ls('trOn') === '1';
   let timer = null, liveTimer = null, seq = 0;
   const aw = AtcWindow.make(win, { key: 'trGeom', head: win.querySelector('.wn-head') });
@@ -31,7 +33,9 @@
   function markButtons() {
     win.querySelectorAll('[data-kind]').forEach(b => b.classList.toggle('on', b.dataset.kind === kind));
     win.querySelectorAll('[data-hours]').forEach(b => b.classList.toggle('on', +b.dataset.hours === hours));
+    win.querySelectorAll('[data-idcol]').forEach(b => b.classList.toggle('on', b.dataset.idcol === idCol));
   }
+  let lastData = null;
 
   function render(d) {
     const what = kind === 'arr' ? 'arrivals' : kind === 'dep' ? 'departures' : 'traffic';
@@ -46,7 +50,7 @@
     const both = kind === 'both';
     const cols = (both ? 7 : 6) + (window.Replay ? 1 : 0);
     let html = '<table class="tr-table"><thead><tr><th>UTC</th>' + (both ? '<th>A/D</th>' : '') +
-               '<th>CALLSIGN</th><th>REG</th><th>TYPE</th><th>RWY</th><th></th>' + (window.Replay ? '<th></th>' : '') + '</tr></thead><tbody>';
+               `<th>CALLSIGN</th><th>${idCol === 'icao' ? 'ICAO24' : 'REG'}</th><th>TYPE</th><th>RWY</th><th></th>` + (window.Replay ? '<th></th>' : '') + '</tr></thead><tbody>';
     let prevDay = dayKey(d.now || Date.now() / 1000);
     for (const r of rows) {
       const day = dayKey(r.t);
@@ -56,7 +60,7 @@
       const key = r.icao + '|' + r.t;
       html += `<tr data-icao="${esc(r.icao)}" data-t="${r.t}" data-tag="${esc(tag)}"${key === selKey ? ' class="sel"' : ''} title="${esc(r.icao)}${r.ga ? ' · ' + r.ga + ' go-around' + (r.ga > 1 ? 's' : '') + ' before landing' : ''}${r.own ? ' · detected by the radar' : ''}">` +
               `<td>${hhmm(r.t)}</td>` + (both ? `<td>${r.kind === 'arr' ? 'ARR' : 'DEP'}</td>` : '') +
-              `<td class="tr-cs">${esc(r.callsign || r.icao)}</td><td>${esc(r.reg || '')}</td><td>${esc(r.type || '')}</td>` +
+              `<td class="tr-cs">${esc(r.callsign || r.icao)}</td><td>${esc(idCol === 'icao' ? r.icao : (r.reg || ''))}</td><td>${esc(r.type || '')}</td>` +
               `<td>${esc(r.rwy || '---')}</td><td class="tr-ga">${ga}</td>` +
               (window.Replay ? `<td class="tr-rp" data-kind="${r.kind}" title="Replay from ${r.kind === 'arr' ? '5' : '2'} min before">▶</td>` : '') + '</tr>';
     }
@@ -73,6 +77,14 @@
       const live = hasAc(tr.dataset.icao);
       tr.classList.toggle('live', live);
       tr.classList.toggle('sel', tr.dataset.icao + '|' + tr.dataset.t === selKey);
+      const cs = tr.querySelector('.tr-cs');
+      if (cs) {
+        const c = window.radarRpfCat ? window.radarRpfCat(tr.dataset.icao) : '';
+        cs.classList.toggle('rf', !!c);
+        let m = cs.querySelector('.rfc');
+        if (c && !m) { m = document.createElement('span'); m.className = 'rfc'; cs.append(' ', m); }
+        if (m) { if (c) m.textContent = c; else { if (m.previousSibling && m.previousSibling.nodeType === 3) m.previousSibling.remove(); m.remove(); } }
+      }
       tr.title = tr.title.replace(HINT, '') + (live ? ' · click: show on the scope' : ' · click: show the track');
     });
   }
@@ -107,7 +119,7 @@
     try {
       const r = await fetch(`/api/efhk_traffic?kind=${kind}&hours=${hours}`, { cache: 'no-store' });
       const d = await r.json();
-      if (my === seq) { delete count.dataset.keep; render(d); }
+      if (my === seq) { delete count.dataset.keep; lastData = d; render(d); }
     } catch (_) {
       if (my === seq) { count.textContent = ''; body.innerHTML = '<p class="wx-none">Radar server not reachable.</p>'; }
     }
@@ -115,6 +127,9 @@
 
   win.querySelectorAll('[data-kind]').forEach(b => b.addEventListener('click', () => {
     kind = b.dataset.kind; ls('trKind', kind); markButtons(); body.textContent = 'Loading…'; load();
+  }));
+  win.querySelectorAll('[data-idcol]').forEach(b => b.addEventListener('click', () => {
+    idCol = b.dataset.idcol; ls('trIdCol', idCol); markButtons(); if (lastData) render(lastData);
   }));
   win.querySelectorAll('[data-hours]').forEach(b => b.addEventListener('click', () => {
     hours = +b.dataset.hours; ls('trHours', String(hours)); markButtons(); body.textContent = 'Loading…'; load();
