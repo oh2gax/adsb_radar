@@ -54,8 +54,8 @@ top-left logo; nothing has to be edited by hand.
   aerodromes' own), the RNAV routes, the FIR, TMA / CTA / CTR, ACC sectors and prohibited / restricted /
   danger areas from the eAIP of AIS Finland; a new AIRAC amendment is installed when it takes effect
 - Airports (OurAirports), navaids outside Finland (OurAirports) and line overlays (coast, water, borders,
-  runways, ILS, EFHK approach lines); `data/overlays/efhk_approach.geojson` = the EFHK finals from MODE-S
-  Wind's `overlays/efhk_ils.geojson`
+  runways); the final approach lines of every Finnish airport come from the AIP (AD 2.12 thresholds and
+  bearings, AD 2.24 instrument approaches)
 - Left pane in the ATC style of the windows (`templates/_side.html`, `static/js/sidepane.js`): sections that open /
   close, on / off buttons (dark = on), button rows for choices, « hides the pane
 - **TRAFFIC** window: all aircraft in a movable / resizable table, sortable, a row click selects the aircraft
@@ -226,7 +226,9 @@ on any failure the old data stay and `/api/navaids_meta` → `navdata.error` say
 the state border" follow `data/fi_borders.geojson` (Finland's land borders, Natural Earth, public domain).
 
 Files in `data/navdata/` (not in git): `AIRAC.json` (package, effective date, AMDT, counts, time),
-`points.csv`, `navaids.csv`, `overlays/fi_fir|fi_tma|fi_sectors|fi_restricted|fi_routes.geojson`. The radar
+`points.csv`, `navaids.csv`, `overlays/fi_fir|fi_tma|fi_sectors|fi_restricted|fi_routes|fi_approach.geojson`
+(fi_approach: every runway end with an instrument approach chart in AD 2.24 — ILS, LOC, RNP, VOR, NDB — from
+its AD 2.12 threshold, against the true bearing, 0–5, 6–10 and 11–15 NM, as MODE-S Wind's ATC map). The radar
 reads them again after an update (no restart); the layer URLs carry the package, so browsers fetch the new
 lines. `/api/airspace_labels` gives the LIMITS labels (name, class, upper / lower limit and the point of each
 TMA / CTA / CTR, sector and P / R / D area farthest from its edges — polylabel, with the smaller areas inside

@@ -997,7 +997,7 @@ let overlayDecimate = parseInt(localStorage.getItem('overlayDecimate') || '2', 1
 
 function overlayCategory(name){
   const n=(name||'').toLowerCase();
-  if(n.includes('approach')) return 'Approach';        // EFHK final approach lines (efhk_approach)
+  if(n.includes('approach')) return 'Approach';        // the final approaches of the Finnish airports (AIP: fi_approach)
   // AIP Finland (navdata.py): routes, TMA / CTA / CTR, ACC sectors, prohibited / restricted / danger areas
   if(n === 'fi_routes') return 'ATS';
   if(n === 'fi_tma') return 'TMA/CTA';
@@ -1129,11 +1129,11 @@ function drawOverlays(g, w, h, cx, cy, R){
   g.restore();
 }
 
-// The EFHK approach lines (when shown) keep the TopSky labels clear, as in MODE-S Wind's ATC map:
+// The approach lines (AIP Finland, every airport; when shown) keep the TopSky labels clear, as in MODE-S Wind's ATC map:
 // the leading aircraft on a final would otherwise put its label straight ahead, over the line.
 // Only the part inside the canvas is used.
 function approachObstacles(w, h, cx, cy, R, out){
-  const nm = 'efhk_approach', L = overlayData[nm];
+  const nm = 'fi_approach', L = overlayData[nm];
   if(!L || !overlayLayers[nm] || !overlayLayers[nm].checked) return;
   const ky = 60 * R / rangeNm, kx = ky * Math.cos(center.lat * Math.PI / 180);
   for(const a of L.segs){

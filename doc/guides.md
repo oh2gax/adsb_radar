@@ -8,7 +8,7 @@ The user guides listed in the **USER GUIDES** tab of the What's new window (app_
 
 ## RADAR user guide
 file: RADAR_User_Guide.pdf
-version: 1.2
+version: 1.3
 date: 2026-11-05
 pages: 14
 

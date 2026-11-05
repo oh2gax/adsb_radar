@@ -10,6 +10,8 @@ Source pages (HTML of the eAIP package in force, plus one PDF list per IFR aerod
   ENR 2.1   FIR, ACC sectors, CTA, FIZ upper, TMA        -> overlays/fi_fir / fi_sectors / fi_tma
   AD 2.17   the CTR of each aerodrome                    -> overlays/fi_tma
   ENR 5.1   prohibited, restricted and danger areas      -> overlays/fi_restricted
+  AD 2.12 + AD 2.24  runway thresholds and bearings, the instrument approaches -> overlays/fi_approach
+            (the final approach of every runway with an instrument approach: 15 NM out, a gap at 5 and 10 NM)
 Terms (AIP Finland GEN 0.1): "Aeronautical data is available for further refining and research without a
 separate fee or agreement." Not for navigation.
 
@@ -32,7 +34,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.environ.get("NAVDATA_DIR", os.path.join(HERE, "data", "navdata"))
 BORDER_FILE = os.path.join(HERE, "data", "fi_borders.geojson")   # Finland's land borders (Natural Earth, public domain)
 UA = "adsb_radar navdata (radar.oh2gax.org)"
-FORMAT = 2          # of the installed files; a newer one rebuilds the data once (2: airspace class)
+FORMAT = 3          # of the installed files; a newer one rebuilds the data once (2: airspace class, 3: approach lines)
 COORD = r"(\d{2})(\d{2})(\d{2}(?:\.\d+)?)\s*([NS])\s*(\d{3})(\d{2})(\d{2}(?:\.\d+)?)\s*([EW])"
 
 
@@ -213,6 +215,78 @@ def parse_ad219(html, icao):
         if len(block) > 14:
             block = block[-14:]
         k += 1
+    return out
+
+
+def parse_ad212(html):
+    """AD 2.12 RUNWAY PHYSICAL CHARACTERISTICS: {rwy: (true bearing, threshold lat, lon)} - the threshold is
+    the first coordinate after the bearing (a displaced one is written 'DTHR ...')."""
+    t = _text(html)
+    i = t.find("RUNWAY PHYSICAL CHARACTERISTICS")
+    j = t.find("AD 2.13", i + 1) if i >= 0 else -1
+    if i < 0:
+        return {}
+    lines = t[i:j if j > 0 else None].split("\n")
+    out, k = {}, 0
+    while k < len(lines) - 1:
+        rw, br = lines[k].strip(), lines[k + 1].strip()
+        if re.fullmatch(r"\d{2}[LRC]?", rw) and re.fullmatch(r"\d{3}(?:\.\d+)?", br):
+            for nxt in lines[k + 2:k + 12]:
+                c = dms(nxt)
+                if c:
+                    out.setdefault(rw, (float(br), c[0], c[1]))
+                    break
+            k += 2
+            continue
+        k += 1
+    return out
+
+
+def parse_ad224_approaches(html):
+    """AD 2.24 CHARTS: {rwy: 'ILS RNP ...'} - the runways with an instrument approach chart (not SID / STAR /
+    copter)."""
+    t = _text(html)
+    i = t.find("AD 2.24")
+    j = t.find("AD 2.25", i + 1) if i >= 0 else -1
+    out = {}
+    if i < 0:
+        return out
+    for line in t[i:j if j > 0 else None].split("\n"):
+        if re.search(r"\b(SID|STAR|COPTER|DEPARTURE|ARC)\b", line):
+            continue
+        m = re.match(r"^(ILS|LOC|RNP|RNAV|VOR|NDB|LNAV|GLS|DME)\b.*?\bRWY\s*(\d{2}[LRC]?)\b", line.strip())
+        if m:
+            kinds = out.setdefault(m.group(2), [])
+            if m.group(1) not in kinds:
+                kinds.append(m.group(1))
+    return {r: " ".join(k) for r, k in out.items()}
+
+
+def _dest(lat, lon, brg, dist_nm):
+    """The point dist_nm from (lat, lon) on the true bearing brg (great circle)."""
+    from math import radians, degrees, sin, cos, asin, atan2
+    d, b, p1, l1 = dist_nm / 3440.065, radians(brg), radians(lat), radians(lon)
+    p2 = asin(sin(p1) * cos(d) + cos(p1) * sin(d) * cos(b))
+    l2 = l1 + atan2(sin(b) * sin(d) * cos(p1), cos(d) - sin(p1) * sin(p2))
+    return round(degrees(p2), 6), round(degrees(l2), 6)
+
+
+APP_SEGMENTS = ((0, 5), (6, 10), (11, 15))          # NM from the threshold: the gaps mark 5 and 10 NM
+
+
+def approach_features(icao, runways, approaches):
+    """LineStrings of the final approach of every runway with an instrument approach, outward from the
+    threshold against the landing direction."""
+    out = []
+    for rw, kinds in sorted(approaches.items()):
+        if rw not in runways:
+            continue
+        brg, la, lo = runways[rw]
+        back = (brg + 180.0) % 360
+        for n, (a, b) in enumerate(APP_SEGMENTS, 1):
+            out.append(_feature(f"{icao} {rw}", [_dest(la, lo, back, a), _dest(la, lo, back, b)],
+                                {"airport": icao, "runway": rw, "approach_heading": round(brg, 2),
+                                 "approach_type": kinds, "segment": n}, poly=False))
     return out
 
 
@@ -397,7 +471,7 @@ def build(folder, eff, log=print):
 
     pts = [dict(p, type="en-route", aerodrome="") for p in parse_enr44(page("ENR 4.4"))]
     navs = parse_enr41(page("ENR 4.1"))
-    feats = {"fi_fir": [], "fi_sectors": [], "fi_tma": [], "fi_restricted": [], "fi_routes": []}
+    feats = {"fi_fir": [], "fi_sectors": [], "fi_tma": [], "fi_restricted": [], "fi_routes": [], "fi_approach": []}
 
     for a in parse_areas(page("ENR 2.1")):
         ring = area_ring(a["text"])
@@ -423,6 +497,7 @@ def build(folder, eff, log=print):
             log(f"[navdata] {icao}: {e}")
             continue
         navs.extend(parse_ad219(h, icao))
+        feats["fi_approach"].extend(approach_features(icao, parse_ad212(h), parse_ad224_approaches(h)))
         for a in parse_areas(h):
             if "CTR" in a["name"].upper():
                 feats["fi_tma"].append(_feature(a["name"], area_ring(a["text"]), {"upper": a["upper"], "lower": a["lower"], "cls": a["cls"]}))
@@ -457,7 +532,8 @@ def build(folder, eff, log=print):
     counts = {"points_en_route": sum(p["type"] == "en-route" for p in pts),
               "points_terminal": sum(p["type"] == "terminal" for p in pts), "navaids": len(navs),
               "routes": len(feats["fi_routes"]), "fir": len(feats["fi_fir"]), "sectors": len(feats["fi_sectors"]),
-              "tma_cta_ctr": len(feats["fi_tma"]), "restricted": len(feats["fi_restricted"]), "aerodromes": len(ads)}
+              "tma_cta_ctr": len(feats["fi_tma"]), "restricted": len(feats["fi_restricted"]), "aerodromes": len(ads),
+              "approaches": len(feats["fi_approach"]) // len(APP_SEGMENTS)}
     return {"package": folder, "effective": eff, "amdt": amdt, "counts": counts, "pdf": have_pdf, "format": FORMAT}, pts, navs, feats
 
 
@@ -471,6 +547,7 @@ def check(meta, pts, navs, feats):
     if c["fir"] < 1: errs.append("no FIR")
     if c["tma_cta_ctr"] < 10: errs.append(f"TMA/CTA/CTR {c['tma_cta_ctr']}")
     if c["restricted"] < 10: errs.append(f"restricted areas {c['restricted']}")
+    if c.get("approaches", 0) < 10: errs.append(f"approach lines {c.get('approaches', 0)}")
     for p in pts + navs:
         if not (59 <= p["lat"] <= 71 and 18 <= p["lon"] <= 33):
             errs.append(f"{p['ident']} outside Finland ({p['lat']}, {p['lon']})")
