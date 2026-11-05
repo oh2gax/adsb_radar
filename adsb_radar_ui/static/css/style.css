@@ -226,10 +226,10 @@ body .stage .overlayBtns .btn:hover { opacity: 1; filter: none; }
 
 
 /* METAR & TAF window: tabs METAR & TAF / REPORTS (pilot reports, reports.js) */
-.wx-window .wx-tabs { display: flex; padding: 6px 10px 0; flex: none; }
-.wx-window .wx-tabs button { font: inherit; font-size: 11px; background: transparent; color: var(--radar-text); border: 1px solid var(--radar-text);
+.wx-window .wx-tabs, .wn-window .wx-tabs { display: flex; padding: 6px 10px 0; flex: none; }
+.wx-window .wx-tabs button, .wn-window .wx-tabs button { font: inherit; font-size: 11px; background: transparent; color: var(--radar-text); border: 1px solid var(--radar-text);
   margin-left: -1px; padding: 2px 9px; cursor: pointer; position: relative; }
-.wx-window .wx-tabs button.on { background: var(--radar-text); color: var(--radar-bg); }
+.wx-window .wx-tabs button.on, .wn-window .wx-tabs button.on { background: var(--radar-text); color: var(--radar-bg); }
 .wx-window .wx-rep { padding-top: 6px; }
 .rp-bar { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin-bottom: 6px; font-size: 11px; }
 .rp-seg { display: inline-flex; }
@@ -373,3 +373,11 @@ body.theme-full-el #status.warn, body.theme-full-el-yellow #status.warn { color:
 .tl-window .tl-table td.tl-ext a { color: inherit; text-decoration: none; opacity: .7; padding: 0 2px; }
 .tl-window .tl-table td.tl-ext a:hover { opacity: 1; }
 body.theme-full-el .tl-window .sq.emg, body.theme-full-el-yellow .tl-window .sq.emg { text-decoration: underline; font-weight: 700; }
+
+/* What's new window: tab USER GUIDES (doc/guides.md) */
+.wn-window .wn-guide h3 { display: block; }
+.wn-window .wn-gmeta { opacity: .8; margin-bottom: 3px; }
+.wn-window .wn-intro { opacity: .85; }
+.wn-window .wn-gbtns { display: flex; gap: 8px; margin: 6px 0 2px; }
+.wn-window .wn-gbtn { color: var(--radar-text); border: 1px solid var(--radar-text); padding: 1px 8px; text-decoration: none; font-size: 11px; }
+.wn-window .wn-gbtn:hover { background: var(--radar-text); color: var(--radar-bg); }

@@ -13,8 +13,10 @@
     <main class="stage">
       <canvas id="radarCanvas"></canvas>
       <div id="wnWindow" class="atc-window wn-window scope-obst" role="dialog" aria-label="What's new" hidden>
-        <div class="wn-head" title="Drag to move; resize from the lower-right corner"><span>WHAT'S NEW</span><button id="wnClose" class="wn-close" type="button" title="Close (Esc)">&times;</button></div>
+        <div class="wn-head" title="Drag to move; resize from the lower-right corner"><span>WHAT'S NEW · USER GUIDES</span><button id="wnClose" class="wn-close" type="button" title="Close (Esc)">&times;</button></div>
+        <div class="wx-tabs"><button type="button" data-wntab="news">WHAT'S NEW</button><button type="button" data-wntab="guides">USER GUIDES</button></div>
         <div id="wnBody" class="wn-body">Loading…</div>
+        <div id="wnGuides" class="wn-body" hidden>Loading…</div>
       </div>
       <div id="wxWindow" class="atc-window wx-window scope-obst" role="dialog" aria-label="METAR and TAF" hidden>
         <div class="wn-head wx-head" title="Drag to move; resize from the lower-right corner"><span id="wxTitle">METAR &amp; TAF</span><button id="wxClose" class="wn-close" type="button" title="Close">&times;</button></div>

@@ -1,4 +1,5 @@
-/* whatsnew.js - the "What's new" window (doc/whats_new.md via /api/whatsnew).
+/* whatsnew.js - the "What's new" window (doc/whats_new.md via /api/whatsnew), with a second tab
+ * USER GUIDES (from 2026-11-05: the PDF guides of doc/guides.md, opened from /doc/<file>).
  * The link under the logo opens a scrollable window over the scope with the changes of
  * the ten newest versions, in the radar's own colours. A dot after the link marks a
  * version this browser has not opened yet. × / Esc / the link again closes it. Since 2026-11-05 the
@@ -9,6 +10,8 @@
   const link = document.getElementById('whatsNewLink');
   const win = document.getElementById('wnWindow');
   const body = document.getElementById('wnBody');
+  const gbody = document.getElementById('wnGuides');
+  const tabs = [...win.querySelectorAll('[data-wntab]')];
   const dot = document.getElementById('whatsNewDot');
   if (!link || !win || !body) return;
   const ver = link.dataset.version || '';
@@ -37,12 +40,32 @@
     flush(); close(0);
     return html;
   }
+  const fmtIso = d => (/^\d{4}-\d\d-\d\d$/.test(d || '') ? d.slice(8) + '.' + d.slice(5, 7) + '.' + d.slice(0, 4) : esc(d || ''));
+  function guides(gs) {
+    if (!gs.length) return '<p>No user guides on this system.</p>';
+    return '<p class="wn-intro">The guides open as PDF in a new browser tab.</p>' + gs.map(g => {
+      const meta = [g.version ? 'Version ' + esc(g.version) : '', g.date ? fmtIso(g.date) : '',
+                    g.pages ? esc(g.pages) + ' pages' : '', g.size ? (g.size / 1e6).toFixed(1) + ' MB' : ''].filter(Boolean).join(' · ');
+      return '<section class="wn-entry wn-guide"><h3>' + esc(g.title) + '</h3><div class="wn-gmeta">' + meta + '</div>' +
+             render(g.lines || []) + '<div class="wn-gbtns"><a class="wn-gbtn" href="' + esc(g.url) + '" target="_blank" rel="noopener">Open PDF</a>' +
+             '<a class="wn-gbtn" href="' + esc(g.url) + '" download>Download</a></div></section>';
+    }).join('');
+  }
+  function showTab(t) {
+    t = t === 'guides' ? 'guides' : 'news';
+    tabs.forEach(b => b.classList.toggle('on', b.dataset.wntab === t));
+    body.hidden = t !== 'news'; if (gbody) gbody.hidden = t !== 'guides';
+    try { localStorage.setItem('wnTab', t); } catch (_) { /* private mode */ }
+  }
+  tabs.forEach(b => b.addEventListener('click', () => showTab(b.dataset.wntab)));
   const fmtVer = v => { const d = v.slice(2); return d.slice(0, 2) + '.' + d.slice(2, 4) + '.' + d.slice(4); };
 
   let loaded = false, aw = null;
   async function open() {
     if (!aw && typeof AtcWindow !== 'undefined') aw = AtcWindow.make(win, { key: 'wnGeom', head: win.querySelector('.wn-head') });
     if (aw) aw.show(); else win.hidden = false;
+    let t0 = null; try { t0 = localStorage.getItem('wnTab'); } catch (_) { /* private mode */ }
+    showTab(t0);
     try { localStorage.setItem('seenVersion', ver); } catch (_) { /* private mode */ }
     if (dot) dot.hidden = true;
     if (loaded) return;
@@ -54,9 +77,11 @@
         (e.version === ver ? '<span class="wn-current">CURRENT</span>' : '') + '</h3>' +
         (e.title ? '<div class="wn-etitle">' + inline(e.title) + '</div>' : '') +
         render(e.lines || []) + '</section>').join('') : '<p>No notes found.</p>';
+      if (gbody) gbody.innerHTML = guides(d.guides || []);
       loaded = true;
     } catch (_) {
       body.textContent = 'Could not load the notes.';
+      if (gbody) gbody.textContent = 'Could not load the guides.';
     }
   }
   const close = () => { win.hidden = true; };

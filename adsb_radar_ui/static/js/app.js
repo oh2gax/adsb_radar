@@ -413,6 +413,12 @@
       const es = d.entries || [];
       $('newsBody').innerHTML = es.length ? es.map(e => `<h3>${esc(e.version)}${e.version === ver ? ' · CURRENT' : ''}</h3>` +
         (e.title ? `<p><b>${inline(e.title)}</b></p>` : '') + mdLines(e.lines || [])).join('') : '<p>No notes found.</p>';
+      // the user guides (doc/guides.md) first, as in the desktop window's USER GUIDES tab
+      const gs = d.guides || [];
+      if (gs.length) $('newsBody').insertAdjacentHTML('afterbegin', '<h3>USER GUIDES</h3>' + gs.map(g =>
+        `<p><a href="${esc(g.url)}" target="_blank" rel="noopener"><b>${esc(g.title)}</b></a><br><small>` +
+        [g.version ? 'Version ' + esc(g.version) : '', g.pages ? esc(g.pages) + ' pages' : '', g.size ? (g.size / 1e6).toFixed(1) + ' MB' : ''].filter(Boolean).join(' · ') +
+        ' · PDF</small></p>').join(''));
       newsLoaded = true;
     } catch (_) { $('newsBody').textContent = 'Could not load the notes.'; }
   }

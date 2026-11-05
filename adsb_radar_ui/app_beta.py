@@ -3,7 +3,7 @@ import os, re, time, threading, csv, sys, json, socket, subprocess, sqlite3, url
 from datetime import datetime
 from math import radians, cos, sin
 from urllib.request import pathname2url
-from flask import Flask, jsonify, render_template, request, abort, Response
+from flask import Flask, jsonify, render_template, request, abort, Response, send_from_directory
 import gzip
 from overlays import register_overlays
 import config
@@ -1179,9 +1179,77 @@ def _whats_new_entries():
     return _whats_new["entries"]
 
 
+# --- User guides (doc/guides.md, the USER GUIDES tab of the What's new window; as in MODE-S Wind) ---
+# Each guide: "## title", then key: value lines (file = a PDF in doc/, version, date YYYY-MM-DD,
+# pages), a blank line and the description (bullets / **bold** / `code`). Only the listed PDFs are
+# served (/doc/<file>); the link carries ?v=<file time> so a new version is never an old cached copy.
+DOC_DIR = os.path.join(os.path.dirname(BASE_DIR), "doc")
+GUIDES_PATH = os.path.join(DOC_DIR, "guides.md")
+_guides = {"mtime": None, "list": []}
+
+
+def _guides_list():
+    try:
+        mt = os.path.getmtime(GUIDES_PATH)
+    except OSError:
+        return []
+    if mt != _guides["mtime"]:
+        out, cur, head = [], None, False
+        try:
+            with open(GUIDES_PATH, encoding="utf-8") as fh:
+                lines = fh.read().splitlines()
+        except OSError:
+            lines = []
+        for line in lines:
+            m = re.match(r"^##\s+(.+?)\s*$", line)
+            if m:
+                cur = {"title": m.group(1), "lines": []}
+                out.append(cur)
+                head = True
+                continue
+            if cur is None:
+                continue
+            if head:
+                kv = re.match(r"^(\w+)\s*:\s*(.*?)\s*$", line)
+                if kv and kv.group(1).lower() in ("file", "version", "date", "pages"):
+                    cur[kv.group(1).lower()] = kv.group(2)
+                    continue
+                if not line.strip():
+                    continue
+                head = False
+            cur["lines"].append(line.rstrip())
+        good = []
+        for g in out:
+            g["file"] = os.path.basename(g.get("file", ""))
+            if not g["file"].lower().endswith(".pdf"):
+                continue
+            while g["lines"] and not g["lines"][-1].strip():
+                g["lines"].pop()
+            good.append(g)
+        _guides.update({"mtime": mt, "list": good})
+    res = []
+    for g in _guides["list"]:
+        try:
+            st = os.stat(os.path.join(DOC_DIR, g["file"]))
+        except OSError:
+            continue                                   # listed but not in this checkout
+        res.append(dict(g, url=f"/doc/{g['file']}?v={int(st.st_mtime)}", size=st.st_size))
+    return res
+
+
 @app.route("/api/whatsnew")
 def api_whatsnew():
-    return jsonify({"version": APP_VERSION, "entries": _whats_new_entries()[:10]})
+    return jsonify({"version": APP_VERSION, "entries": _whats_new_entries()[:10], "guides": _guides_list()})
+
+
+@app.route("/doc/<name>")
+def guide_pdf(name):
+    """A user guide PDF - only the files listed in doc/guides.md."""
+    if not any(g["file"] == name for g in _guides_list()):
+        abort(404)
+    resp = send_from_directory(DOC_DIR, name, mimetype="application/pdf", max_age=0)
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 @app.route("/api/ac/<icao>")

@@ -7,14 +7,16 @@ Format: a version starts with `## v.DDMMYYYY — title`; under it bullets (`- `,
 sub-bullets indented by two spaces) or plain paragraphs. **bold**, *italic* and
 `code` are shown as such.
 
-## v.05112026 — Replay, pilot reports, new left pane
+## v.05112026 — Replay, pilot reports, new left pane, user guide
 
 - **New left pane** — the settings on the left now look like the windows on the scope: the scope's own colours, a thin line between sections, and buttons instead of tick boxes — a button is **dark while it is on**, and a row of buttons picks one of a few choices (e.g. `CLASSIC | TOPSKY`, `.5 | 1 | 2 | 3 | 5` min). The pane is narrower, so the map is wider.
   - The sections (VIEW, WINDOWS, LABELS, TARGETS, MAP, ALTIMETER, OWN POSITION, ICAO24 FILTER, STATUS) open and close from their title; a closed one shows a short summary (e.g. `Q0997 auto`). The pane remembers which are open.
   - The UTC clock and the feed status are at the top; **WINDOWS** opens the windows on the scope: TRAFFIC LIST, EFHK TRAFFIC, METAR & TAF and REPLAY.
   - **«** at the top hides the whole pane for a full-width scope; **»** under the zoom buttons brings it back.
   - *Lines* has one button per map line set (APPROACH, AIRPORTS, WATER, ATS, BORDERS, COAST, FIR, ILS); the airports, navaids and waypoints are reloaded at once when *Within* changes. All your settings are kept.
-- **TRAFFIC window** — the traffic list is now a window on the scope (*WINDOWS → TRAFFIC LIST*): move it by its title, resize it from its corner. Callsign, level, squawk (emergency squawks in red), distance, registration and type; click **CALLSIGN**, **LVL** or **NM** to sort (again: the other way). A click on a row selects that aircraft on the scope (history line, extended label), a second click releases it; **↗** opens it on flightradar24 / ADS-B Exchange. *Copy* copies the list.
+- **User guide** — the new **RADAR user guide** (PDF, 13 pages): the scope, the labels and the alarms, the left pane, the windows, replay, the phone version, where the data come from and a quick reference. Open it from **What's new · Guides** at the top of the left pane → **USER GUIDES** (in the app: ☰ → *What's new · Guides*).
+- **What's new window** — has two tabs, WHAT'S NEW and USER GUIDES, and now moves by its title and resizes from its corner like the other windows, and remembers its place and size; it stays open while you use the scope (× or Esc closes it).
+- **TRAFFIC window** — the traffic list is now a window on the scope (*WINDOWS → TRAFFIC LIST*): move it by its title, resize it from its corner. Callsign, level as in the TopSky label (`032↓030`: hundreds of feet, trend, selected level), squawk (emergency squawks in red), distance, registration and type; click **CALLSIGN**, **LVL** or **NM** to sort (again: the other way). A click on a row selects that aircraft on the scope (history line, extended label), a second click releases it; **↗** opens it on flightradar24 / ADS-B Exchange. *Copy* copies the list.
 - **Replay** — play back any moment of the last **30 days**: the scope shows the traffic exactly as it was, every second, with the labels, the extended label's values, the GA alarm and the history line. Open it with **Replay → Replay bar** in the left panel.
   - **▶** plays and pauses (also the space bar), **−10 min / −1 min / +1 min / +10 min** jump, and **1× 2× 5× 10× 30× 60×** set the speed. The banner at the top says *REPLAY*, the UTC time and the speed.
   - Type a UTC time in the **UTC** box (`14:40`, `1440` or `14:40:30`) and press Enter or *Go*; choose the day from the list (days with no recording are greyed) or step with **◀ ▶**. The slider covers the whole UTC day; the go-arounds are marked on it with **GA**.

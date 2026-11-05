@@ -23,8 +23,9 @@ top-left logo; nothing has to be edited by hand.
   selected altitude, ground speed, registration and type, speed vector and trail
 - Registration / type from BaseStation.sqb, completed from aircraft_ref.db (tar1090-db)
   when the feed has none — the files MODE-S Wind keeps up to date every morning
-- **What's new** link under the logo: the notes of the ten newest versions in a window over
-  the scope (`doc/whats_new.md`)
+- **What's new · Guides** at the top of the pane: the notes of the ten newest versions (`doc/whats_new.md`)
+  and the PDF user guides (`doc/guides.md`, served at `/doc/<file>`; `doc/RADAR_User_Guide.pdf`) in a window
+  over the scope
 - **Own position**: a small triangle at a position entered in decimal degrees
 - **METAR & TAF** window for any airport (EFHK by default): movable, resizable, remembered; a
   **Reports** tab with MODE-S Wind's pilot reports, WXREPs, SIGMETs / AIRMETs and windshear METARs
@@ -232,7 +233,8 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 | `/api/qnh` | latest METAR and QNH (Auto QNH, `METAR_STATION`) |
 | `/api/efhk_traffic?kind=both&hours=3` | EFHK landings / departures from MODE-S Wind (kind arr/dep/both, hours 1/3/6/12/24) |
 | `/api/wx?icao=EFHK` | METAR and TAF of one airport (cached 10 min, shared by all viewers) |
-| `/api/whatsnew` | the ten newest versions of `doc/whats_new.md` |
+| `/api/whatsnew` | the ten newest versions of `doc/whats_new.md` and the user guides of `doc/guides.md` |
+| `/doc/<file>` | a user guide PDF listed in `doc/guides.md` (nothing else), no-cache |
 | `/api/ac/<hex>` | Comm-B / EHS values of one aircraft (TopSky extended label) |
 | `/api/track/<hex>?t=&since=` | history line: the points `[t, lat, lon, alt, src]` of the flight around time `t` (default the latest), only newer than `since` |
 | `/api/ehs_status` | Beast feed reader: connected, messages, ADS-B positions, aircraft with Comm-B; `tracks`: recorder status; `movements`: QNH, GA marks, recent events |
@@ -241,5 +243,5 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 
 - `adsb_radar_ui/` – the application (Flask app, static files, data)
 - `deploy/` – reference systemd unit
-- `doc/` – `whats_new.md`, the notes of the What's new window
+- `doc/` – `whats_new.md`, the notes of the What's new window; `guides.md` and the user guide PDFs
 - `tmp_files/` – local scratch folder, not in git
