@@ -50,17 +50,24 @@ def register_overlays(app, CENTER_LAT, CENTER_LON, OVERLAY_DIR, exclude_names=No
             try:
                 with open(path, 'r', encoding='utf-8') as fh:
                     gj = _json.load(fh)
-                segs = []
+                segs, ids = [], []          # ids: the area of each line (the first word of its name: EFR92A, EFTSAV21)
                 if (gj.get('type') or '').lower() == 'featurecollection':
                     for feat in (gj.get('features') or []):
+                        n0 = len(segs)
                         _ov_handle_geom_into(feat.get('geometry') or {}, segs)
+                        nm = str(((feat.get('properties') or {}).get('name') or '')).split(' ')[0]
+                        ids.extend([nm] * (len(segs) - n0))
                 else:
                     _ov_handle_geom_into(gj, segs)
+                    ids = [''] * len(segs)
                 if seg_filter:
-                    segs = [sg for sg in segs if seg_filter(base_noext, sg)]
+                    keep = [seg_filter(base_noext, sg) for sg in segs]
+                    segs = [sg for sg, k in zip(segs, keep) if k]
+                    ids = [i for i, k in zip(ids, keep) if k]
                 # bounding box per line: (min_lat, max_lat, min_lon, max_lon)
                 boxes = [(min(p[0] for p in sg), max(p[0] for p in sg), min(p[1] for p in sg), max(p[1] for p in sg)) for sg in segs]
-                _overlays_cache[base_noext] = {'segments': segs, 'bbox': boxes, 'count': len(segs)}
+                _overlays_cache[base_noext] = {'segments': segs, 'bbox': boxes, 'count': len(segs),
+                                               'ids': ids if base_noext.startswith('fi_') and any(ids) else None}
             except Exception as e:
                 print('Overlay load fail', fn, e)
 
@@ -102,7 +109,10 @@ def register_overlays(app, CENTER_LAT, CENTER_LON, OVERLAY_DIR, exclude_names=No
                     for lat, lon in s2:
                         flat.append(round(lat, 5)); flat.append(round(lon, 5))
                     segs.append(flat)
-                raw = _json.dumps({'ok': True, 'name': name, 'segments': segs}, separators=(',', ':')).encode()
+                body = {'ok': True, 'name': name, 'segments': segs}
+                if _overlays_cache[name].get('ids'):
+                    body['ids'] = _overlays_cache[name]['ids']       # the AIP area of each line (active areas)
+                raw = _json.dumps(body, separators=(',', ':')).encode()
                 _layer_bytes[key] = (raw, gzip.compress(raw, 6))
             raw, gz = _layer_bytes[key]
             use_gz = 'gzip' in (request.headers.get('Accept-Encoding') or '')

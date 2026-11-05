@@ -1032,6 +1032,7 @@ function overlayCategory(name){
   if(n === 'fi_tma') return 'TMA/CTA';
   if(n === 'fi_sectors') return 'Sectors';
   if(n === 'fi_restricted') return 'Restricted';
+  if(n === 'fi_tsa') return 'TSA';
   if(n.includes('coast')||n.includes('shore')) return 'Coastlines';
   if(n.includes('ils')) return 'ILS';
   if(n.includes('apt')||n.includes('airport')) return 'Airports';
@@ -1061,7 +1062,7 @@ async function loadOverlayMeta(){
     });
     if(Object.keys(layers).length===0){ listEl.textContent='No .geojson files in /data/overlays'; return; }
     // one toggle button per category (the left pane's MAP → Lines); the layers stay as hidden check boxes
-    const CAT_SHORT = {Hydro:'WATER', Coastlines:'COAST', Navaids:'NAVAIDS', Other:'OTHER', 'TMA/CTA':'TMA/CTA', Sectors:'SECTORS', Restricted:'P/R/D'};
+    const CAT_SHORT = {Hydro:'WATER', Coastlines:'COAST', Navaids:'NAVAIDS', Other:'OTHER', 'TMA/CTA':'TMA/CTA', Sectors:'SECTORS', Restricted:'P/R/D', TSA:'TSA/TRA'};
     listEl.innerHTML = Object.entries(cats).map(([cat,names])=>{
       const anyChecked = names.some(nm=>overlayLayers[nm].checked);
       const tip = names.map(nm=>`${nm} (${overlayLayers[nm].count})`).join(', ');
@@ -1093,7 +1094,7 @@ let overlayVersion = 0;          // bumped when a layer arrives (the static laye
 const overlayLoading = {};
 function requestOverlayFetch(){ fetchOverlays(); markStaticDirty(); }
 async function fetchOverlays(){
-  const names = Object.entries(overlayLayers).filter(([,o])=>o.checked).map(([nm])=>nm);
+  const names = Object.entries(overlayLayers).filter(([nm,o])=>o.checked || actLayerOn(nm)).map(([nm])=>nm);
   await Promise.all(names.map(async nm => {
     const have = overlayData[nm];
     const key = nm + '@' + overlayDecimate;
@@ -1113,7 +1114,7 @@ async function fetchOverlays(){
         bbox[i*4] = la1; bbox[i*4+1] = la2; bbox[i*4+2] = lo1; bbox[i*4+3] = lo2;
         segs.push(a);
       });
-      overlayData[nm] = {dec: overlayDecimate, segs, bbox};
+      overlayData[nm] = {dec: overlayDecimate, segs, bbox, ids: j.ids || null};
       overlayVersion++; markStaticDirty();
     }catch(e){ /* try again on the next request */ }
     finally{ delete overlayLoading[key]; }
@@ -1122,7 +1123,7 @@ async function fetchOverlays(){
 // Draw the ticked layers on g: one path per layer, lines outside the view skipped, points closer
 // than about a pixel to the previous one skipped (a big saving when zoomed out).
 function drawOverlays(g, w, h, cx, cy, R){
-  const names = Object.keys(overlayData).filter(nm => overlayLayers[nm] && overlayLayers[nm].checked);
+  const names = Object.keys(overlayData).filter(nm => overlayLayers[nm] && overlayLayers[nm].checked && !actLayerOn(nm));
   if(!names.length) return;
   const clat = center.lat, clon = center.lon, cosc = Math.cos(clat * Math.PI / 180);
   const ky = 60 * R / rangeNm, kx = ky * cosc;          // px per degree
@@ -1137,6 +1138,7 @@ function drawOverlays(g, w, h, cx, cy, R){
     else if(nm === 'fi_tma'){ g.setLineDash([]); g.lineWidth = 1; }
     else if(nm === 'fi_sectors'){ g.setLineDash([1,3]); g.lineWidth = 1; }
     else if(nm === 'fi_restricted'){ g.setLineDash([6,3]); g.lineWidth = 1; }
+    else if(nm === 'fi_tsa'){ g.setLineDash([8,3,2,3]); g.lineWidth = 1; }
     else if(nm === 'fi_routes'){ g.setLineDash([]); g.lineWidth = 0.8; }
     else if(lower.includes('border') || lower.includes('fir')){ g.setLineDash([3,3]); g.lineWidth = 1; }
     else { g.setLineDash([]); g.lineWidth = 1; }
@@ -1251,9 +1253,11 @@ function drawStatic(w, h, cx, cy, R){
     }
   }
   drawOverlays(g, w, h, cx, cy, R);
+  drawActiveAreas(g, w, h, cx, cy, R);
   staticNavObst = [];
   drawNavaidsLayer(g, cx, cy, R, staticNavObst);
   drawAirspaceLabels(g, w, h, cx, cy, R, staticNavObst);
+  drawActiveTags(g, w, h, cx, cy, R, staticNavObst);
 }
 
 // --- LIMITS: the airspace labels of AIP Finland (server: /api/airspace_labels) ---
@@ -1337,6 +1341,145 @@ function drawAirspaceLabels(g, w, h, cx, cy, R, obst){
   for(const b of placed) obst.push(b);
 }
 
+// --- ACTIVE: the areas active at the scope's time (server: /api/airspace_active, airact.py - the NOTAMs that
+// activate restricted / danger areas and the daily Airspace Use Plan AUP / UUP of the training areas). MAP →
+// Active P/R/D, TSA/TRA: that set is then drawn here - the active areas in red (a light fill) with a tag
+// (identifier, limits, until); the others as the set's Lines button says, or hidden with MAP → Inactive HIDE.
+// In a replay: the areas active then.
+const ACT = {prd: localStorage.getItem('actPrd') === '1', tsa: localStorage.getItem('actTsa') === '1',
+             hide: localStorage.getItem('actMode') === 'hide'};
+const ACT_LAYER = {fi_restricted: 'prd', fi_tsa: 'tsa'};
+function actLayerOn(nm){ return !!(ACT_LAYER[nm] && ACT[ACT_LAYER[nm]]); }
+let actAreas = new Map(), actCircles = [], actKey = '', actBucket = null, actAsked = 0, actT = 0;
+async function fetchActive(t){
+  actAsked = Date.now();
+  try{
+    const j = await (await fetch('/api/airspace_active?t=' + Math.floor(t))).json();
+    actAreas = new Map((j.areas || []).map(a => [a.id, a]));
+    actCircles = j.circles || []; actT = j.t || t;
+    actKey = [...actAreas.keys()].join(',') + '|' + actCircles.map(c => c.id).join(',') + '|' + (j.areas || []).map(a => a.lo + a.up + a.until).join('');
+    const info = document.getElementById('actInfo');
+    if(info){
+      const shown = [...actAreas.keys()].filter(id => (ACT.prd && /^EF[PRD]/.test(id)) || (ACT.tsa && /^E[FU](TSA|TRA|CBA)/.test(id))).length;
+      info.textContent = (ACT.prd || ACT.tsa) ? `${shown} active` : '';
+      const ch = j.checked || {}, hm = s => s ? new Date(s * 1000).toISOString().slice(11, 16) + 'Z' : '--';
+      info.title = `Checked ${hm(j.last_check)} (every 30 min) · last change: NOTAM ${hm(ch.notam)}, AUP/UUP ${hm(ch.aup)}` + (j.error ? ' · ' + j.error : '');
+    }
+    markStaticDirty();
+  }catch(e){}
+}
+function actTick(){
+  if(!(ACT.prd || ACT.tsa)) return;
+  const t = (replayActive() ? radarNow() : Date.now()) / 1000, b = Math.floor(t / 60);
+  if(b !== actBucket && Date.now() - actAsked > 1500){ actBucket = b; fetchActive(t); }
+}
+setInterval(actTick, 1000);
+function actChanged(){
+  const info = document.getElementById('actInfo'); if(info && !(ACT.prd || ACT.tsa)) info.textContent = '';
+  if((ACT.prd || ACT.tsa) && !airspaceLabels.length) fetchAirspaceLabels();
+  actBucket = null; actTick(); fetchOverlays(); markStaticDirty();
+}
+for(const [id, k] of [['actPrd', 'prd'], ['actTsa', 'tsa']]){
+  const cb = document.getElementById(id); if(!cb) continue;
+  cb.checked = ACT[k];
+  cb.addEventListener('change', () => { ACT[k] = cb.checked; try{ localStorage.setItem(id, cb.checked ? '1' : '0'); }catch(_){} actChanged(); });
+}
+{ const sel = document.getElementById('actMode');
+  if(sel){ sel.value = ACT.hide ? 'hide' : 'show';
+    sel.addEventListener('change', () => { ACT.hide = sel.value === 'hide'; try{ localStorage.setItem('actMode', sel.value); }catch(_){} markStaticDirty(); }); } }
+if(ACT.prd || ACT.tsa) setTimeout(actChanged, 0);
+const actRed = () => (document.body.classList.contains('theme-full-el') || document.body.classList.contains('theme-full-el-yellow')) ? null : '#ff2d2d';
+function drawActiveAreas(g, w, h, cx, cy, R){
+  const clat = center.lat, clon = center.lon, ky = 60 * R / rangeNm, kx = ky * Math.cos(clat * Math.PI / 180);
+  const mlat = (h / 2 + 20) / ky, mlon = (w / 2 + 20) / kx;
+  const vla1 = clat - mlat, vla2 = clat + mlat, vlo1 = clon - mlon, vlo2 = clon + mlon;
+  const red = actRed();
+  g.save();
+  for(const nm of ['fi_tsa', 'fi_restricted']){
+    const L = overlayData[nm];
+    if(!actLayerOn(nm) || !L) continue;
+    for(const act of [false, true]){
+      if(!act && (ACT.hide || !(overlayLayers[nm] && overlayLayers[nm].checked))) continue;
+      g.beginPath();
+      let any = false;
+      for(let i = 0; i < L.segs.length; i++){
+        const isAct = !!(L.ids && actAreas.has(L.ids[i]));
+        if(isAct !== act) continue;
+        const bb = L.bbox;
+        if(bb[i*4+1] < vla1 || bb[i*4] > vla2 || bb[i*4+3] < vlo1 || bb[i*4+2] > vlo2) continue;
+        const a = L.segs[i], n = a.length;
+        let lx = cx + (a[1] - clon) * kx, ly = cy - (a[0] - clat) * ky;
+        g.moveTo(lx, ly); any = true;
+        for(let k = 2; k < n; k += 2){
+          const x = cx + (a[k+1] - clon) * kx, y = cy - (a[k] - clat) * ky;
+          if(k < n - 2 && Math.abs(x - lx) < 0.8 && Math.abs(y - ly) < 0.8) continue;
+          g.lineTo(x, y); lx = x; ly = y;
+        }
+      }
+      if(!any) continue;
+      if(act){
+        g.strokeStyle = red || colors.text; g.lineWidth = red ? 1.6 : 2.2; g.setLineDash([]);
+        if(red){ g.globalAlpha = 0.08; g.fillStyle = red; g.fill(); g.globalAlpha = 1; }
+      }
+      else { g.strokeStyle = colors.navaid || colors.text; g.lineWidth = 1; g.setLineDash(nm === 'fi_tsa' ? [8,3,2,3] : [6,3]); }
+      g.stroke();
+    }
+  }
+  // temporary areas given by a centre and a radius in the NOTAM
+  if(ACT.prd){
+    g.strokeStyle = red || colors.text; g.lineWidth = red ? 1.6 : 2.2; g.setLineDash([]);
+    for(const c of actCircles){
+      const x = cx + (c.lon - clon) * kx, y = cy - (c.lat - clat) * ky, r = Math.max(2, c.r_nm * R / rangeNm);
+      if(x < -r || y < -r || x > w + r || y > h + r) continue;
+      g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
+    }
+  }
+  g.restore();
+}
+function actUntil(u){
+  if(!u) return '';
+  if(u > 4.0e9) return 'PERM';
+  const d = new Date(u * 1000), now = actT || Date.now() / 1000, p = n => String(n).padStart(2, '0');
+  return u - now < 20 * 3600 ? p(d.getUTCHours()) + p(d.getUTCMinutes()) + 'Z' : p(d.getUTCDate()) + '.' + p(d.getUTCMonth() + 1) + '.';
+}
+// the tags of the active areas: EFR92A / SFC–FL310 →1400Z, at the point of the area farthest from its edges
+function drawActiveTags(g, w, h, cx, cy, R, obst){
+  if(!(ACT.prd || ACT.tsa) || !actAreas.size) return;
+  const pxPerNm = R / rangeNm, lh = 11, red = actRed();
+  const pos = new Map();
+  for(const L of airspaceLabels) if(L.layer === 'fi_restricted' || L.layer === 'fi_tsa') pos.set(L.name, L);
+  for(const c of actCircles) if(!pos.has(c.id)) pos.set(c.id, {lat: c.lat, lon: c.lon, r: c.r_nm, layer: 'fi_restricted'});
+  const placed = [];
+  const hit = (a, list, pad) => list.some(b => a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y);
+  g.save(); g.font = '10px ui-monospace, monospace'; g.textBaseline = 'middle'; g.textAlign = 'center'; g.setLineDash([]);
+  const list = [...actAreas.values()].filter(a => (ACT.prd && /^EF[PRD]/.test(a.id)) || (ACT.tsa && /^E[FU](TSA|TRA|CBA)/.test(a.id)));
+  list.sort((a, b) => ((pos.get(a.id) || {}).r || 0) - ((pos.get(b.id) || {}).r || 0));
+  for(const a of list){
+    const P = pos.get(a.id); if(!P) continue;
+    const p = projectNm(P.lat, P.lon), x = cx + p.x * pxPerNm, y = cy - p.y * pxPerNm;
+    if(x < -40 || y < -20 || x > w + 40 || y > h + 20) continue;
+    if((P.r || 0) * pxPerNm < 4) continue;                       // too small on the screen for a tag
+    const l1 = a.id, l2 = `${a.lo}–${a.up} →${actUntil(a.until)}`;
+    const W = Math.max(g.measureText(l1).width, g.measureText(l2).width) + 6, H = 2 * lh + 2;
+    let box = null;
+    for(const [dx, dy] of [[0, 0], [0, -H], [0, H], [-W * 0.6, 0], [W * 0.6, 0]]){
+      const b = {x: x + dx - W / 2, y: y + dy - H / 2, w: W, h: H};
+      if(hit(b, placed, 3)) continue;
+      if(!hit(b, obst, 1)){ box = b; break; }
+      if(!box) box = b;
+    }
+    if(!box || hit(box, placed, 3)) continue;
+    placed.push(box);
+    g.fillStyle = colors.bg; g.fillRect(box.x, box.y, box.w, box.h);
+    g.strokeStyle = red || colors.text; g.lineWidth = 1; g.strokeRect(box.x + 0.5, box.y + 0.5, box.w - 1, box.h - 1);
+    g.fillStyle = red || colors.text;
+    g.fillText(l1, box.x + box.w / 2, box.y + lh / 2 + 1);
+    g.fillText(l2, box.x + box.w / 2, box.y + lh * 1.5 + 1);
+  }
+  g.restore();
+  for(const b of placed) obst.push(b);
+}
+
 function drawScope(){
   const w = canvas.width / DPR;
   const h = canvas.height / DPR;
@@ -1346,7 +1489,7 @@ function drawScope(){
   if(!(R>10)) return;
   const content = [canvas.width, canvas.height, DPR, showRings, ringSpacing, theme, colors.bg, colors.text,
               colors.navaid, overlayVersion, Object.keys(overlayLayers).filter(k => overlayLayers[k].checked).join(','), overlayDecimate,
-              showAirports, showNavaids, showFixes, window.navaidsVersion || 0, airspaceLabelsVer, Object.values(LBL_ON).join('')].join('|');
+              showAirports, showNavaids, showFixes, window.navaidsVersion || 0, airspaceLabelsVer, Object.values(LBL_ON).join(''), actKey].join('|');
   const sk = content + '|' + center.lat + '|' + center.lon + '|' + rangeNm;
   const nowMs = performance.now();
   const viewOnly = staticView && staticView.content === content && !staticDirty;

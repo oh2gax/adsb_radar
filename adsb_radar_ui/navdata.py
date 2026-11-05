@@ -10,6 +10,7 @@ Source pages (HTML of the eAIP package in force, plus one PDF list per IFR aerod
   ENR 2.1   FIR, ACC sectors, CTA, FIZ upper, TMA        -> overlays/fi_fir / fi_sectors / fi_tma
   AD 2.17   the CTR of each aerodrome                    -> overlays/fi_tma
   ENR 5.1   prohibited, restricted and danger areas      -> overlays/fi_restricted
+  ENR 5.2   military training areas TSA / TRA / CBA      -> overlays/fi_tsa (not the buffer zones ...Z)
   AD 2.12 + AD 2.24  runway thresholds and bearings, the instrument approaches -> overlays/fi_approach
             (the final approach of every runway with an instrument approach: 15 NM out, a gap at 5 and 10 NM)
 Terms (AIP Finland GEN 0.1): "Aeronautical data is available for further refining and research without a
@@ -34,7 +35,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.environ.get("NAVDATA_DIR", os.path.join(HERE, "data", "navdata"))
 BORDER_FILE = os.path.join(HERE, "data", "fi_borders.geojson")   # Finland's land borders (Natural Earth, public domain)
 UA = "adsb_radar navdata (radar.oh2gax.org)"
-FORMAT = 3          # of the installed files; a newer one rebuilds the data once (2: airspace class, 3: approach lines)
+FORMAT = 4          # of the installed files; a newer one rebuilds the data once (2: airspace class, 3: approach lines, 4: TSA / TRA)
 COORD = r"(\d{2})(\d{2})(\d{2}(?:\.\d+)?)\s*([NS])\s*(\d{3})(\d{2})(\d{2}(?:\.\d+)?)\s*([EW])"
 
 
@@ -458,6 +459,22 @@ def _point_in(ring, lat, lon):
     return inside
 
 
+def tsa_features(areas):
+    """ENR 5.2 areas -> features of the training areas EFTSA.. / EFTRA.. / EUCBA.. (kind TSA / TRA / CBA). The
+    flight plan buffer zones (the same name + Z, R, S or T) and the ADIZ are left out."""
+    ids = {a["name"].split(" ")[0] for a in areas}
+    out = []
+    for a in areas:
+        n = a["name"].split(" ")[0]
+        m = re.match(r"(?:EF|EU)(TSA|TRA|CBA)", n)
+        if not m or (n[-1] in "ZRST" and n[:-1] in ids):
+            continue
+        ring = area_ring(a["text"])
+        if len(ring) >= 4:
+            out.append(_feature(a["name"], ring, {"upper": a["upper"], "lower": a["lower"], "kind": m.group(1)}))
+    return out
+
+
 # ---------------------------------------------------------------- build
 def build(folder, eff, log=print):
     root = BASE + _q(folder) + "/"
@@ -471,7 +488,7 @@ def build(folder, eff, log=print):
 
     pts = [dict(p, type="en-route", aerodrome="") for p in parse_enr44(page("ENR 4.4"))]
     navs = parse_enr41(page("ENR 4.1"))
-    feats = {"fi_fir": [], "fi_sectors": [], "fi_tma": [], "fi_restricted": [], "fi_routes": [], "fi_approach": []}
+    feats = {"fi_fir": [], "fi_sectors": [], "fi_tma": [], "fi_restricted": [], "fi_tsa": [], "fi_routes": [], "fi_approach": []}
 
     for a in parse_areas(page("ENR 2.1")):
         ring = area_ring(a["text"])
@@ -482,6 +499,7 @@ def build(folder, eff, log=print):
         ring = area_ring(a["text"])
         feats["fi_restricted"].append(_feature(a["name"], ring, {"upper": a["upper"], "lower": a["lower"],
                                                                  "kind": (re.match(r"EF([PRD])", a["name"]) or [None, ""])[1]}))
+    feats["fi_tsa"] = tsa_features(parse_areas(page("ENR 5.2")))
 
     ads = sorted(set(re.findall(r"EF-AD 2 (EF[A-Z]{2}) - ([^\"'#]*?) 1-en-GB\.html", menu)))
     try:
@@ -533,7 +551,7 @@ def build(folder, eff, log=print):
               "points_terminal": sum(p["type"] == "terminal" for p in pts), "navaids": len(navs),
               "routes": len(feats["fi_routes"]), "fir": len(feats["fi_fir"]), "sectors": len(feats["fi_sectors"]),
               "tma_cta_ctr": len(feats["fi_tma"]), "restricted": len(feats["fi_restricted"]), "aerodromes": len(ads),
-              "approaches": len(feats["fi_approach"]) // len(APP_SEGMENTS)}
+              "approaches": len(feats["fi_approach"]) // len(APP_SEGMENTS), "tsa_tra": len(feats["fi_tsa"])}
     return {"package": folder, "effective": eff, "amdt": amdt, "counts": counts, "pdf": have_pdf, "format": FORMAT}, pts, navs, feats
 
 
@@ -548,6 +566,7 @@ def check(meta, pts, navs, feats):
     if c["tma_cta_ctr"] < 10: errs.append(f"TMA/CTA/CTR {c['tma_cta_ctr']}")
     if c["restricted"] < 10: errs.append(f"restricted areas {c['restricted']}")
     if c.get("approaches", 0) < 10: errs.append(f"approach lines {c.get('approaches', 0)}")
+    if c.get("tsa_tra", 0) < 10: errs.append(f"TSA / TRA areas {c.get('tsa_tra', 0)}")
     for p in pts + navs:
         if not (59 <= p["lat"] <= 71 and 18 <= p["lon"] <= 33):
             errs.append(f"{p['ident']} outside Finland ({p['lat']}, {p['lon']})")
@@ -699,7 +718,7 @@ def labels(out_dir=OUT_DIR):
     """The label of every TMA / CTA / CTR, ACC sector and P / R / D area of the installed data:
     [{layer, name, cls, up, lo, lat, lon, r (NM free around the point)}]."""
     out = []
-    for layer in ("fi_tma", "fi_sectors", "fi_restricted"):
+    for layer in ("fi_tma", "fi_sectors", "fi_restricted", "fi_tsa"):
         try:
             gj = json.load(open(os.path.join(out_dir, "overlays", layer + ".geojson"), encoding="utf-8"))
         except (OSError, ValueError):
@@ -716,8 +735,8 @@ def labels(out_dir=OUT_DIR):
             name = pr.get("name", "")
             if layer == "fi_sectors":
                 name = re.sub(r"^EF ACC SECT\s*", "SECT ", name)
-            elif layer == "fi_restricted":
-                name = name.split(" ")[0]                  # EFR51, EFD160NZ ...
+            elif layer in ("fi_restricted", "fi_tsa"):
+                name = name.split(" ")[0]                  # EFR51, EFD160NZ, EFTSAV21 ...
             up, lo = _short_alt(pr.get("upper")), _short_alt(pr.get("lower"))
             if layer == "fi_sectors" and up in ("FL660", "UNL") and lo in ("SFC", "GND"):
                 up = lo = ""                               # every sector: FL 660 / SFC - the box says nothing

@@ -1,5 +1,6 @@
-/* whatsnew.js - the "What's new" window (doc/whats_new.md via /api/whatsnew), with a second tab
- * USER GUIDES (from 2026-11-05: the PDF guides of doc/guides.md, opened from /doc/<file>).
+/* whatsnew.js - the "What's new" window (doc/whats_new.md via /api/whatsnew), with the tabs
+ * USER GUIDES (from 2026-11-05: the PDF guides of doc/guides.md, opened from /doc/<file>) and ABOUT
+ * (doc/about.md: what RADAR is, the data sources and credits).
  * The link under the logo opens a scrollable window over the scope with the changes of
  * the ten newest versions, in the radar's own colours. A dot after the link marks a
  * version this browser has not opened yet. × / Esc / the link again closes it. Since 2026-11-05 the
@@ -11,6 +12,7 @@
   const win = document.getElementById('wnWindow');
   const body = document.getElementById('wnBody');
   const gbody = document.getElementById('wnGuides');
+  const abody = document.getElementById('wnAbout');
   const tabs = [...win.querySelectorAll('[data-wntab]')];
   const dot = document.getElementById('whatsNewDot');
   if (!link || !win || !body) return;
@@ -52,9 +54,9 @@
     }).join('');
   }
   function showTab(t) {
-    t = t === 'guides' ? 'guides' : 'news';
+    t = t === 'guides' || t === 'about' ? t : 'news';
     tabs.forEach(b => b.classList.toggle('on', b.dataset.wntab === t));
-    body.hidden = t !== 'news'; if (gbody) gbody.hidden = t !== 'guides';
+    body.hidden = t !== 'news'; if (gbody) gbody.hidden = t !== 'guides'; if (abody) abody.hidden = t !== 'about';
     try { localStorage.setItem('wnTab', t); } catch (_) { /* private mode */ }
   }
   tabs.forEach(b => b.addEventListener('click', () => showTab(b.dataset.wntab)));
@@ -78,6 +80,8 @@
         (e.title ? '<div class="wn-etitle">' + inline(e.title) + '</div>' : '') +
         render(e.lines || []) + '</section>').join('') : '<p>No notes found.</p>';
       if (gbody) gbody.innerHTML = guides(d.guides || []);
+      if (abody) abody.innerHTML = (d.about || []).map(a => '<section class="wn-entry"><h3><span>' + esc(a.title) + '</span></h3>' +
+                                     render(a.lines || []) + '</section>').join('') || '<p>No information.</p>';
       loaded = true;
     } catch (_) {
       body.textContent = 'Could not load the notes.';

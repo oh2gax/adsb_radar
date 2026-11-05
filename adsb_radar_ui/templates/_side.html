@@ -134,6 +134,15 @@
             <label class="tg" title="ACC sectors: the sector letter"><input type="checkbox" id="lblSectors" hidden>SECTORS</label>
             <label class="tg" title="Prohibited, restricted and danger areas: identifier and limits"><input type="checkbox" id="lblRestricted" hidden>P/R/D</label>
           </span></div>
+          <div class="lp-r" title="Active areas in red: the restricted and danger areas activated by NOTAM (firing etc.) and the military training areas of the daily Airspace Use Plan (AUP / UUP), as at the scope's time (also in a replay)"><span class="lp-k">Active</span><span class="chips">
+            <label class="tg" title="Prohibited, restricted and danger areas active now (NOTAM, AUP)"><input type="checkbox" id="actPrd" hidden>P/R/D</label>
+            <label class="tg" title="Military training areas TSA / TRA active now (AUP / UUP)"><input type="checkbox" id="actTsa" hidden>TSA/TRA</label>
+          </span><span class="note" id="actInfo"></span></div>
+          <div class="lp-r" title="While Active is on for a set: its areas not active now - SHOW: drawn when the set's Lines button is on; HIDE: never"><span class="lp-k">Inactive</span>
+            <select id="actMode" class="seg-src">
+              <option value="show" data-s="SHOW" selected>Show</option>
+              <option value="hide" data-s="HIDE">Hide</option>
+            </select><span class="seg" data-for="actMode"></span></div>
           <div class="lp-r" title="Detail of the lines: fewer points draw faster"><span class="lp-k">Detail</span>
             <select id="overlayDecimate" class="seg-src">
               <option value="1" data-s="FULL">Full</option>

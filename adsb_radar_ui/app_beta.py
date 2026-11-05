@@ -13,6 +13,7 @@ import movements
 import replay
 import navdata
 import rpf
+import airact
 
 app = Flask(__name__, static_url_path="/static")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1322,9 +1323,26 @@ def _guides_list():
     return res
 
 
+def _about():
+    """doc/about.md (the ABOUT tab): [{title, lines}] - one per '## ' section (the file's own heading and
+    note before the first section are left out)."""
+    try:
+        with open(os.path.join(DOC_DIR, "about.md"), encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return []
+    out = []
+    for line in text.splitlines():
+        if line.startswith("## "):
+            out.append({"title": line[3:].strip(), "lines": []})
+        elif out:
+            out[-1]["lines"].append(line)
+    return out
+
+
 @app.route("/api/whatsnew")
 def api_whatsnew():
-    return jsonify({"version": APP_VERSION, "entries": _whats_new_entries()[:10], "guides": _guides_list()})
+    return jsonify({"version": APP_VERSION, "entries": _whats_new_entries()[:10], "guides": _guides_list(), "about": _about()})
 
 
 @app.route("/doc/<name>")
@@ -1511,5 +1529,46 @@ def api_rpf():
 
 
 threading.Thread(target=_rpf_keeper, daemon=True).start()
+
+
+# Active airspace (airact.py): the NAV WRNG NOTAMs and the AUP / UUP, checked every 30 min (first 75 s after
+# the start); every changed result is kept, so a replay shows the areas active then.
+_airact = {"last_check": None, "message": "", "error": None, "cache": {}}
+
+
+def _airact_keeper():
+    if os.environ.get("AIRACT_AUTO", "1") in ("0", "false", "no"):
+        return
+    time.sleep(75)
+    while True:
+        try:
+            _airact.update(message=airact.update(), error=None, last_check=time.time(), cache={})
+        except Exception as e:
+            _airact.update(error=str(e)[:300], last_check=time.time())
+            print(f"[airact] check failed: {e}", file=sys.stderr)
+        time.sleep(max(5.0, float(os.environ.get("AIRACT_CHECK_MIN", "30"))) * 60)
+
+
+@app.route("/api/airspace_active")
+def api_airspace_active():
+    """The areas active at ?t=<epoch> (default now; a replay asks its own time): ids with levels and until,
+    temporary circles, when the sources were checked. Cached per minute."""
+    try:
+        t = float(request.args.get("t")) if request.args.get("t") else time.time()
+    except ValueError:
+        abort(400)
+    key = int(t // 60)
+    c = _airact["cache"]
+    if key not in c:
+        if len(c) > 500:
+            c.clear()
+        c[key] = airact.active_at(key * 60 + 30)
+    body = dict(c[key], message=_airact["message"], error=_airact["error"], last_check=_airact["last_check"])
+    resp = _json_response(body)
+    resp.headers["Cache-Control"] = "public, max-age=60"
+    return resp
+
+
+threading.Thread(target=_airact_keeper, daemon=True).start()
 if __name__ == "__main__":
     app.run(host=config.HOST, port=config.PORT, debug=False)

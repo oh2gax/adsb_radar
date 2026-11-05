@@ -7,8 +7,11 @@ Format: a version starts with `## v.DDMMYYYY — title`; under it bullets (`- `,
 sub-bullets indented by two spaces) or plain paragraphs. **bold**, *italic* and
 `code` are shown as such.
 
-## v.05112026 — Replay, pilot reports, new left pane, user guide, AIP Finland
+## v.05112026 — Replay, pilot reports, new left pane, user guide, AIP Finland, active airspace
 
+- **Active airspace in red** — *MAP → Active*: **P/R/D** shows the restricted and danger areas activated by NOTAM (firing, UAV flights, exercises) and **TSA/TRA** the military training areas of the daily Airspace Use Plan (AUP / UUP), in red with a tag: the area, its limits and when it ends (`EFR92A / SFC–FL310 →1400Z`). The radar checks AIS Finland every 30 minutes and follows the schedules (an area booked MON-FRI 0600-1500 is red only then). *Inactive* **SHOW** draws the other areas when their *Lines* button is on, **HIDE** leaves only the active ones. In a replay you see the areas that were active at that moment. In the app: ☰ → *Map*.
+- **TSA / TRA training areas** — the military training areas of AIP Finland (ENR 5.2) as a new line set, *Lines → TSA/TRA* (dash-dot).
+- **About** — the What's new window has a third tab, **ABOUT**: what RADAR is and where its data come from.
 - **Filter by registration or callsign** — the FILTER (formerly ICAO24 filter) now also takes registrations (`OH-LZC`, or `OHLZC`) and callsigns (`FIN7LH`) besides ICAO24 codes and ranges; `*` stands for any characters (`FIN*` all Finnair flights, `OH-*` all Finnish registrations). Enter applies it, and *FILTER ON* in the scope's corner reminds you it is on. In the app: ☰ → *Filter*.
 - **Solo** — *TARGETS → Solo*: while an aircraft is selected, only it is drawn on the scope; click the empty scope (or Esc) and all traffic is back. The TRAFFIC window still lists everyone, so a click on another row moves Solo to that aircraft. In the app: ☰ → *Display → Solo*.
 - **EFHK traffic: REG / ICAO24** — choose whether the column after the callsign shows the registration (the default) or the ICAO24 code; the app's EFHK traffic page has the column too.

@@ -52,8 +52,12 @@ top-left logo; nothing has to be edited by hand.
   mouse or a clicked one shows the six-line extended label with IAS, TAS, Mach, magnetic
   heading, drift, roll, wind, temperature and NACp from MODE-S Wind's Beast feed
 - **AIP Finland, updated automatically** (`navdata.py`): the Finnish navaids, IFR points (en-route and the
-  aerodromes' own), the RNAV routes, the FIR, TMA / CTA / CTR, ACC sectors and prohibited / restricted /
-  danger areas from the eAIP of AIS Finland; a new AIRAC amendment is installed when it takes effect
+  aerodromes' own), the RNAV routes, the FIR, TMA / CTA / CTR, ACC sectors, prohibited / restricted /
+  danger areas and the TSA / TRA training areas from the eAIP of AIS Finland; a new AIRAC amendment is
+  installed when it takes effect
+- **Active airspace** (`airact.py`): the restricted and danger areas activated by NOTAM (firing, UAV, exercises)
+  and the training areas of the daily Airspace Use Plan (AUP / UUP) in red with their limits and end time,
+  checked every 30 minutes; inactive areas shown or hidden; in a replay the areas active then
 - Airports (OurAirports), navaids outside Finland (OurAirports) and line overlays (coast, water, borders,
   runways); the final approach lines of every Finnish airport come from the AIP (AD 2.12 thresholds and
   bearings, AD 2.24 instrument approaches)
@@ -64,6 +68,19 @@ top-left logo; nothing has to be edited by hand.
 - Four themes, label overlap avoidance, a filter by ICAO24 code / range, registration or callsign (`*` = any), Solo (only the selected aircraft)
 - "FEED LOST" warning when the feed stops; targets are cleared after 30 s
 - All viewer settings are kept in the browser (localStorage); "Reset UI" clears them
+
+## Data and credits
+
+- Traffic: the MODE-S Wind receiver in Tuusula (ADS-B, MLAT, Mode S / Comm-B).
+- **AIP Finland** (eAIP), the **NAV WRNG** pre-flight information bulletin (NOTAM) and the **Airspace Use Plan**
+  AUP / UUP: AIS Finland, Fintraffic Air Navigation Services, https://www.ais.fi. AIP Finland GEN 0.1:
+  *aeronautical data is available for further refining and research without a separate fee or agreement*
+  (resale excluded). Shown for information only, not for navigation.
+- METAR and TAF: NOAA / National Weather Service (tgftp.nws.noaa.gov).
+- Pilot reports, WXREPs, SIGMETs: the Finnish aviation weather service, collected by MODE-S Wind.
+- Airports and navaids outside Finland: OurAirports (public domain). State borders: Natural Earth (public domain).
+
+The same text is in the ABOUT tab of the What's new window (`doc/about.md`).
 
 ## Running on the AWS server
 
@@ -118,6 +135,8 @@ it rolls back to the previous commit by itself. Hand edits made on the server ar
 | `REPLAY_MIN_FREE_GB` | 5 | recording pauses below this much free disk |
 | `NAVDATA_AUTO` / `NAVDATA_CHECK_HOURS` | 1 / 24 | check the AIP of Finland for a new AIRAC amendment (`0` = off) / how often |
 | `NAVDATA_DIR` | `adsb_radar_ui/data/navdata` | the installed AIP data (created automatically, not in git) |
+| `AIRACT_AUTO` / `AIRACT_CHECK_MIN` | 1 / 30 | check the active areas (NOTAM, AUP / UUP; `0` = off) / how often, minutes |
+| `AIRACT_DIR` / `AIRACT_KEEP_DAYS` | `adsb_radar_ui/data/airact` / 31 | the kept results of the checks (for the replay; not in git) / days kept |
 | `MAG_DECLINATION` | 10.5 | used for the wind only if `pygeomag` (WMM2025) is missing |
 | `FEED_STALE_SECONDS` | 30 | feed silence before targets are cleared |
 | `MAX_RANGE_NM` | 0 | drop targets beyond this range (0 = off) |
@@ -220,14 +239,15 @@ The Finnish navaids, IFR points, routes and airspaces come from the eAIP of AIS 
 research without a separate fee or agreement* (resale excluded). Shown for information only, not for
 navigation. A thread of the radar checks once a day (first 60 s after the start) which package is in force
 (the list at `/eaip/`, by effective date); only when it differs from the installed one it downloads ENR 2.1,
-ENR 3.2 (one page per route), ENR 4.1, ENR 4.4, ENR 5.1 and, for each aerodrome, AD 2 page 1 (AD 2.17 CTR,
+ENR 3.2 (one page per route), ENR 4.1, ENR 4.4, ENR 5.1, ENR 5.2 and, for each aerodrome, AD 2 page 1 (AD 2.17 CTR,
 AD 2.19 navaids) and the WAYPOINTS AND FIXES PDF (read with `pypdf`) — about 80 requests, 20 s. The result is
 checked (counts within limits, positions inside Finland, shapes) before it replaces the previous data;
 on any failure the old data stay and `/api/navaids_meta` → `navdata.error` says why. Limits that run "along
 the state border" follow `data/fi_borders.geojson` (Finland's land borders, Natural Earth, public domain).
 
 Files in `data/navdata/` (not in git): `AIRAC.json` (package, effective date, AMDT, counts, time),
-`points.csv`, `navaids.csv`, `overlays/fi_fir|fi_tma|fi_sectors|fi_restricted|fi_routes|fi_approach.geojson`
+`points.csv`, `navaids.csv`, `overlays/fi_fir|fi_tma|fi_sectors|fi_restricted|fi_tsa|fi_routes|fi_approach.geojson`
+(fi_tsa: the TSA / TRA / CBA training areas of ENR 5.2, without the flight plan buffer zones ...Z)
 (fi_approach: every runway end with an instrument approach chart in AD 2.24 — ILS, LOC, RNP, VOR, NDB — from
 its AD 2.12 threshold, against the true bearing, 0–5, 6–10 and 11–15 NM, as MODE-S Wind's ATC map). The radar
 reads them again after an update (no restart); the layer URLs carry the package, so browsers fetch the new
@@ -237,6 +257,21 @@ it as holes — and how many NM are free around it); radar.js draws a label only
 the screen and not over another label. Inside the Finnish FIR the navaids come only from the AIP; outside it
 from `data/navaids.csv`. By hand:
 `venv/bin/python navdata.py` (update if needed), `--force` (rebuild now), `--status`.
+
+## Active airspace (`airact.py`)
+
+Every 30 minutes (first 75 s after the start) a thread of the radar reads two open sources of AIS Finland:
+the **NAV WRNG** bulletin of the Helsinki FIR (`https://www.ais.fi/bulletins/wrng.htm`: the NOTAMs that
+activate restricted and danger areas; an activation is a NOTAM with an area designator and `ACT`, its FROM /
+TO and SCHEDULE — `0700-1800`, `MON-FRI 0600-1500 EXC DEC 24 25`, `04 0400-1355, 05-06 0400-1800`,
+`OCT 29 1000-1700` … — become time windows; a temporary area given as `PSN … RADIUS …` gets a circle) and the
+**AUP / UUP** (`https://www.ais.fi/aup/index.html`, PDF read with `pypdf`, valid 0600–0600 UTC; a UUP replaces
+the AUP of the day): the AMC Manageable Areas with levels and times, the buffer zones (…Z) left out. Every result
+that differs from the one before is kept in `data/airact/airact.db` (31 days), so `active_at(t)` — and a replay —
+gives the areas active at any moment. `/api/airspace_active?t=` (default now, cached per minute). The overlay
+API sends the area of each line (`ids`), so radar.js draws the active ones in red with a tag
+(`EFR92A / SFC–FL310 →1400Z`) and the others as the Lines buttons say, or hides them (MAP → Inactive HIDE).
+By hand: `venv/bin/python airact.py` (check now), `--status`.
 
 ## Feed format
 
@@ -263,11 +298,12 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 | `/api/navaids?clat=&clon=&nmr=` | airports / navaids / waypoints within `nmr` NM |
 | `/api/navaids_meta` | counts, sources and `navdata` (AIRAC package, effective date, last check, error) |
 | `/api/airspace_labels` | the LIMITS labels of the AIP airspaces (name, class, upper / lower, position, free radius) |
+| `/api/airspace_active?t=` | the areas active at `t` (default now): id, source, limits, until; temporary circles; last check |
 | `/api/overlays_meta`, `/api/overlay/<name>?dec=2` | line overlays (GeoJSON in `data/overlays`), one whole layer, gzip, cacheable |
 | `/api/qnh` | latest METAR and QNH (Auto QNH, `METAR_STATION`) |
 | `/api/efhk_traffic?kind=both&hours=3` | EFHK landings / departures from MODE-S Wind (kind arr/dep/both, hours 1/3/6/12/24) |
 | `/api/wx?icao=EFHK` | METAR and TAF of one airport (cached 10 min, shared by all viewers) |
-| `/api/whatsnew` | the ten newest versions of `doc/whats_new.md` and the user guides of `doc/guides.md` |
+| `/api/whatsnew` | the ten newest versions of `doc/whats_new.md`, the user guides of `doc/guides.md`, the ABOUT text of `doc/about.md` |
 | `/doc/<file>` | a user guide PDF listed in `doc/guides.md` (nothing else), no-cache |
 | `/api/ac/<hex>` | Comm-B / EHS values of one aircraft (TopSky extended label) |
 | `/api/track/<hex>?t=&since=` | history line: the points `[t, lat, lon, alt, src]` of the flight around time `t` (default the latest), only newer than `since` |
@@ -277,5 +313,5 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 
 - `adsb_radar_ui/` – the application (Flask app, static files, data)
 - `deploy/` – reference systemd unit
-- `doc/` – `whats_new.md`, the notes of the What's new window; `guides.md` and the user guide PDFs
+- `doc/` – `whats_new.md`, the notes of the What's new window; `guides.md` and the user guide PDFs; `about.md` (ABOUT tab)
 - `tmp_files/` – local scratch folder, not in git
