@@ -1022,6 +1022,7 @@ async function loadOverlayMeta(){
     const j=await r.json(); if(!j.ok) throw new Error(j.error||'meta');
     const layers=j.layers||{}; const cats={};
     overlayDataVer = j.ver || '';
+    if(Object.values(LBL_ON).some(Boolean)) fetchAirspaceLabels();
     Object.entries(layers).forEach(([nm,count])=>{
       const saved=localStorage.getItem('ov_'+nm);
       const checked=(saved===null ? (OVERLAY_DEFAULT_ON.has(nm) ? '1' : '0') : saved)==='1';
@@ -1223,6 +1224,88 @@ function drawStatic(w, h, cx, cy, R){
   drawOverlays(g, w, h, cx, cy, R);
   staticNavObst = [];
   drawNavaidsLayer(g, cx, cy, R, staticNavObst);
+  drawAirspaceLabels(g, w, h, cx, cy, R, staticNavObst);
+}
+
+// --- LIMITS: the airspace labels of AIP Finland (server: /api/airspace_labels) ---
+// The chart style: the name and class, under it a box with the upper limit over the lower limit
+// (FL285 / 2500). One switch per set (MAP → Limits: TMA/CTA, SECTORS, P/R/D); a set is labelled only
+// while its lines are shown. A label goes at the point of its area farthest from the edges, only when the
+// area is big enough on the screen, and not over another label (small areas first, then P/R/D, sectors);
+// it moves a little to keep clear of the navaid / waypoint names. TopSky labels keep clear of it.
+const LBL_LAYERS = {lblTma: 'fi_tma', lblRestricted: 'fi_restricted', lblSectors: 'fi_sectors'};
+const LBL_ON = {};
+for(const id of Object.keys(LBL_LAYERS)) LBL_ON[id] = localStorage.getItem(id) === '1' ? 1 : 0;
+let airspaceLabels = [], airspaceLabelsVer = '';
+async function fetchAirspaceLabels(){
+  try{
+    const r = await fetch('/api/airspace_labels?v=' + encodeURIComponent(overlayDataVer || ''));
+    const j = await r.json();
+    airspaceLabels = j.labels || []; airspaceLabelsVer = j.ver || '';
+    markStaticDirty(); requestDraw();
+  }catch(e){}
+}
+for(const id of Object.keys(LBL_LAYERS)){
+  const cb = document.getElementById(id);
+  if(!cb) continue;
+  cb.checked = !!LBL_ON[id];
+  cb.addEventListener('change', () => {
+    LBL_ON[id] = cb.checked ? 1 : 0;
+    try{ localStorage.setItem(id, cb.checked ? '1' : '0'); }catch(_){}
+    if(cb.checked && !airspaceLabels.length) fetchAirspaceLabels();
+    markStaticDirty(); requestDraw();
+  });
+}
+function drawAirspaceLabels(g, w, h, cx, cy, R, obst){
+  if(!airspaceLabels.length) return;
+  const on = {};
+  for(const [id, layer] of Object.entries(LBL_LAYERS)) on[layer] = LBL_ON[id] && overlayLayers[layer] && overlayLayers[layer].checked;
+  if(!Object.values(on).some(Boolean)) return;
+  const order = ['fi_tma', 'fi_restricted', 'fi_sectors'];
+  const pxPerNm = R / rangeNm, lh = 11;
+  const placed = [];
+  const hit = (a, list, pad) => list.some(b => a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y);
+  g.save();
+  g.font = '10px ui-monospace, monospace'; g.textBaseline = 'middle'; g.textAlign = 'center';
+  g.strokeStyle = colors.navaid || colors.text; g.fillStyle = colors.navaid || colors.text; g.lineWidth = 1; g.setLineDash([]);
+  for(const layer of order){
+    if(!on[layer]) continue;
+    for(const L of airspaceLabels){
+      if(L.layer !== layer) continue;
+      const p = projectNm(L.lat, L.lon);
+      const x = cx + p.x * pxPerNm, y = cy - p.y * pxPerNm;
+      if(x < -60 || y < -40 || x > w + 60 || y > h + 40) continue;
+      const title = L.name + (L.cls ? '  ' + L.cls : '');
+      const hasBox = !!(L.up || L.lo);
+      const tw = g.measureText(title).width, bw = hasBox ? Math.max(g.measureText(L.up || '').width, g.measureText(L.lo || '').width) + 8 : 0;
+      const W = Math.max(tw, bw) + 2, H = lh + (hasBox ? 2 * lh + 4 : 0);
+      if(L.r * pxPerNm * 2 < Math.max(W, H) * 0.9) continue;          // the area is too small on the screen
+      let box = null;
+      for(const [dx, dy] of [[0, 0], [0, -H], [0, H], [-W * 0.6, 0], [W * 0.6, 0]]){
+        const b = {x: x + dx - W / 2, y: y + dy - H / 2, w: W, h: H};
+        if(hit(b, placed, 4)) continue;
+        if(!hit(b, obst, 1)){ box = b; break; }
+        if(!box) box = b;                                                // first free of labels; keep looking for one free of names
+      }
+      if(!box || hit(box, placed, 4)) continue;
+      placed.push(box);
+      const mx = box.x + box.w / 2;
+      g.fillStyle = colors.bg;                                           // a background, as on a chart: no line through the text
+      g.fillRect(mx - tw / 2 - 2, box.y, tw + 4, lh);
+      if(hasBox) g.fillRect(mx - bw / 2, box.y + lh + 2, bw + 1, 2 * lh + 3);
+      g.fillStyle = colors.navaid || colors.text;
+      g.fillText(title, mx, box.y + lh / 2);
+      if(hasBox){
+        const by = box.y + lh + 2, bx = mx - bw / 2;
+        g.strokeRect(bx + 0.5, by + 0.5, bw, 2 * lh + 2);
+        g.beginPath(); g.moveTo(bx + 0.5, by + lh + 1.5); g.lineTo(bx + bw + 0.5, by + lh + 1.5); g.stroke();
+        g.fillText(L.up || '', mx, by + lh / 2 + 1);
+        g.fillText(L.lo || '', mx, by + lh * 1.5 + 2);
+      }
+    }
+  }
+  g.restore();
+  for(const b of placed) obst.push(b);
 }
 
 function drawScope(){
@@ -1234,7 +1317,7 @@ function drawScope(){
   if(!(R>10)) return;
   const content = [canvas.width, canvas.height, DPR, showRings, ringSpacing, theme, colors.bg, colors.text,
               colors.navaid, overlayVersion, Object.keys(overlayLayers).filter(k => overlayLayers[k].checked).join(','), overlayDecimate,
-              showAirports, showNavaids, showFixes, window.navaidsVersion || 0].join('|');
+              showAirports, showNavaids, showFixes, window.navaidsVersion || 0, airspaceLabelsVer, Object.values(LBL_ON).join('')].join('|');
   const sk = content + '|' + center.lat + '|' + center.lon + '|' + rangeNm;
   const nowMs = performance.now();
   const viewOnly = staticView && staticView.content === content && !staticDirty;

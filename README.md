@@ -228,7 +228,11 @@ the state border" follow `data/fi_borders.geojson` (Finland's land borders, Natu
 Files in `data/navdata/` (not in git): `AIRAC.json` (package, effective date, AMDT, counts, time),
 `points.csv`, `navaids.csv`, `overlays/fi_fir|fi_tma|fi_sectors|fi_restricted|fi_routes.geojson`. The radar
 reads them again after an update (no restart); the layer URLs carry the package, so browsers fetch the new
-lines. Inside the Finnish FIR the navaids come only from the AIP; outside it from `data/navaids.csv`. By hand:
+lines. `/api/airspace_labels` gives the LIMITS labels (name, class, upper / lower limit and the point of each
+TMA / CTA / CTR, sector and P / R / D area farthest from its edges — polylabel, with the smaller areas inside
+it as holes — and how many NM are free around it); radar.js draws a label only when the area is big enough on
+the screen and not over another label. Inside the Finnish FIR the navaids come only from the AIP; outside it
+from `data/navaids.csv`. By hand:
 `venv/bin/python navdata.py` (update if needed), `--force` (rebuild now), `--status`.
 
 ## Feed format
@@ -255,6 +259,7 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 | `/api/aircraft` | targets, `feed_age`, `error`, `feed_lost`, `version` |
 | `/api/navaids?clat=&clon=&nmr=` | airports / navaids / waypoints within `nmr` NM |
 | `/api/navaids_meta` | counts, sources and `navdata` (AIRAC package, effective date, last check, error) |
+| `/api/airspace_labels` | the LIMITS labels of the AIP airspaces (name, class, upper / lower, position, free radius) |
 | `/api/overlays_meta`, `/api/overlay/<name>?dec=2` | line overlays (GeoJSON in `data/overlays`), one whole layer, gzip, cacheable |
 | `/api/qnh` | latest METAR and QNH (Auto QNH, `METAR_STATION`) |
 | `/api/efhk_traffic?kind=both&hours=3` | EFHK landings / departures from MODE-S Wind (kind arr/dep/both, hours 1/3/6/12/24) |

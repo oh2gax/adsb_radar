@@ -8,9 +8,9 @@ The user guides listed in the **USER GUIDES** tab of the What's new window (app_
 
 ## RADAR user guide
 file: RADAR_User_Guide.pdf
-version: 1.1
+version: 1.2
 date: 2026-11-05
-pages: 13
+pages: 14
 
 How to use **RADAR** at radar.oh2gax.org — the air traffic around Helsinki-Vantaa as an ATC-style radar display, from the MODE-S Wind receiver in Tuusula.
 

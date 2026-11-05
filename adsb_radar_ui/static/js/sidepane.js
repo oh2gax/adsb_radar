@@ -58,7 +58,7 @@
     alt: () => { const q = $('qnhInput'); return q && q.value ? 'Q' + String(q.value).padStart(4, '0') + ($('qnhAuto') && $('qnhAuto').checked ? ' auto' : '') : ''; },
     own: () => ($('ownPosOn') && $('ownPosOn').checked ? 'shown' : 'off'),
     filter: () => ($('icaoFilter') && $('icaoFilter').value.trim() ? 'on' : 'off'),
-    status: () => (window.navdataInfo || '').replace('AIP Finland ', ''),
+    status: () => ((window.navdataInfo || '').match(/AIRAC [\d.]+/) || [''])[0],
   };
 
   // --- keep the buttons in step with the controls (radar.js and the app set them by code)

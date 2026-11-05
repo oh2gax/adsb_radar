@@ -824,6 +824,22 @@ def _overlay_version():
     return (m.get("package", "") + "@" + m.get("fetched", "")) if m else "none"
 
 
+_labels_cache = {"ver": None, "body": None}
+
+
+@app.route("/api/airspace_labels")
+def api_airspace_labels():
+    """The labels of the AIP airspaces (LIMITS on the scope): name, class, upper / lower limit and the point
+    inside each area farthest from its edges, with how many NM are free around it (navdata.labels).
+    Cacheable: the page asks with ?v=<data version>."""
+    ver = _overlay_version()
+    if _labels_cache["ver"] != ver:
+        _labels_cache.update(ver=ver, body=navdata.labels(navdata.OUT_DIR) if _navdata["meta"] else [])
+    resp = _json_response({"ver": ver, "labels": _labels_cache["body"]})
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
+
+
 def _navdata_keeper():
     """Check the AIP once a day (first 60 s after the start) and install a new amendment when it takes
     effect; NAVDATA_AUTO=0 switches this off (navdata.py can still be run by hand)."""

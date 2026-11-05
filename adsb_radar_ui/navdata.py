@@ -32,6 +32,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.environ.get("NAVDATA_DIR", os.path.join(HERE, "data", "navdata"))
 BORDER_FILE = os.path.join(HERE, "data", "fi_borders.geojson")   # Finland's land borders (Natural Earth, public domain)
 UA = "adsb_radar navdata (radar.oh2gax.org)"
+FORMAT = 2          # of the installed files; a newer one rebuilds the data once (2: airspace class)
 COORD = r"(\d{2})(\d{2})(\d{2}(?:\.\d+)?)\s*([NS])\s*(\d{3})(\d{2})(\d{2}(?:\.\d+)?)\s*([EW])"
 
 
@@ -255,7 +256,18 @@ def parse_areas(html):
     for m in re.finditer(r"Area bounded by lines joining points\s*\n?(.*?to point of origin\.?)", t, re.S):
         before = t[:m.start()].split("\n")[-4:]
         after = t[m.end():].split("\n")
-        after = [a for a in after if a.strip()][:3]
+        after = [a for a in after if a.strip()][:9]
+        cls = []                                   # the airspace class(es): "BTN 2500 FT MSL – 1300 FT MSL C", or "D" (CTR)
+        for k, a in enumerate(after[1:9]):
+            a = a.strip()
+            if re.search(r"Area bounded", a):
+                break
+            mm = re.match(r"^(?:BTN|ABV|BLW)\b.*\s([A-G])$", a)
+            if mm:
+                cls.append(mm.group(1))
+            elif re.fullmatch(r"[A-G]", a) and k <= 3:
+                cls.append(a)
+        after = after[:3]
         name, desig = "", ""
         for b in reversed(before):
             b = b.strip()
@@ -270,7 +282,8 @@ def parse_areas(html):
                 up, lo = [x.strip() for x in after[0].split("/", 1)]
             elif len(after) > 1:
                 up, lo = after[0], after[1]
-        out.append({"name": name, "desig": desig, "text": " ".join(m.group(1).split()), "upper": up, "lower": lo})
+        out.append({"name": name, "desig": desig, "text": " ".join(m.group(1).split()), "upper": up, "lower": lo,
+                    "cls": "".join(dict.fromkeys(cls))})
     return out
 
 
@@ -390,7 +403,7 @@ def build(folder, eff, log=print):
         ring = area_ring(a["text"])
         n = (a["name"] + " " + a["desig"]).upper()
         kind = "fi_fir" if "FIR" in n else "fi_sectors" if "SECT" in n else "fi_tma"
-        feats[kind].append(_feature(a["name"], ring, {"desig": a["desig"], "upper": a["upper"], "lower": a["lower"]}))
+        feats[kind].append(_feature(a["name"], ring, {"desig": a["desig"], "upper": a["upper"], "lower": a["lower"], "cls": a["cls"]}))
     for a in parse_areas(page("ENR 5.1")):
         ring = area_ring(a["text"])
         feats["fi_restricted"].append(_feature(a["name"], ring, {"upper": a["upper"], "lower": a["lower"],
@@ -412,7 +425,7 @@ def build(folder, eff, log=print):
         navs.extend(parse_ad219(h, icao))
         for a in parse_areas(h):
             if "CTR" in a["name"].upper():
-                feats["fi_tma"].append(_feature(a["name"], area_ring(a["text"]), {"upper": a["upper"], "lower": a["lower"]}))
+                feats["fi_tma"].append(_feature(a["name"], area_ring(a["text"]), {"upper": a["upper"], "lower": a["lower"], "cls": a["cls"]}))
         if not have_pdf:
             continue
         try:
@@ -445,7 +458,7 @@ def build(folder, eff, log=print):
               "points_terminal": sum(p["type"] == "terminal" for p in pts), "navaids": len(navs),
               "routes": len(feats["fi_routes"]), "fir": len(feats["fi_fir"]), "sectors": len(feats["fi_sectors"]),
               "tma_cta_ctr": len(feats["fi_tma"]), "restricted": len(feats["fi_restricted"]), "aerodromes": len(ads)}
-    return {"package": folder, "effective": eff, "amdt": amdt, "counts": counts, "pdf": have_pdf}, pts, navs, feats
+    return {"package": folder, "effective": eff, "amdt": amdt, "counts": counts, "pdf": have_pdf, "format": FORMAT}, pts, navs, feats
 
 
 def check(meta, pts, navs, feats):
@@ -513,7 +526,7 @@ def update(force=False, log=print, out_dir=OUT_DIR):
     Returns (changed, meta or None, message)."""
     folder, eff = package_in_force()
     cur = installed(out_dir)
-    if cur and cur.get("package") == folder and not force:
+    if cur and cur.get("package") == folder and cur.get("format", 1) >= FORMAT and not force:
         return False, cur, f"up to date: {folder}"
     meta, pts, navs, feats = build(folder, eff, log=log)
     errs = check(meta, pts, navs, feats)
@@ -521,6 +534,119 @@ def update(force=False, log=print, out_dir=OUT_DIR):
         raise RuntimeError("new data rejected: " + "; ".join(errs[:5]))
     meta = write(meta, pts, navs, feats, out_dir)
     return True, meta, f"installed {folder}: {meta['counts']}"
+
+
+# ---------------------------------------------------------------- labels of the airspaces (LIMITS on the scope)
+def _short_alt(v):
+    """'FL 285' -> 'FL285', '2500 FT MSL' -> '2500', '2000 FT AGL' -> '2000 AGL', SFC / GND / UNL as they are."""
+    v = " ".join((v or "").upper().split())
+    m = re.fullmatch(r"FL\s*(\d+)", v)
+    if m:
+        return "FL" + m.group(1)
+    m = re.fullmatch(r"(\d+)\s*FT\s*(MSL|AMSL|ALT)?", v)
+    if m:
+        return m.group(1)
+    m = re.fullmatch(r"(\d+)\s*FT\s*(AGL|SFC|GND)", v)
+    if m:
+        return m.group(1) + " AGL"
+    return v
+
+
+def _polylabel(ring, precision=0.5, holes=()):
+    """The point inside a polygon farthest from its edges (Mapbox's polylabel), on a local NM plane:
+    (lat, lon, distance to the nearest edge in NM). holes: rings of smaller areas inside it (a CTR inside
+    its TMA), so the label goes where this area is the one seen."""
+    from math import cos, radians, hypot
+    import heapq
+    lat0 = sum(p[0] for p in ring) / len(ring)
+    k = cos(radians(lat0))
+    pts = [((lo * 60 * k), (la * 60)) for la, lo in ring]
+    hls = [[((lo * 60 * k), (la * 60)) for la, lo in h] for h in holes]
+
+    def seg_d2(px, py, a, b):
+        x, y = a; dx, dy = b[0] - x, b[1] - y
+        if dx or dy:
+            t = ((px - x) * dx + (py - y) * dy) / (dx * dx + dy * dy)
+            if t > 1: x, y = b
+            elif t > 0: x += dx * t; y += dy * t
+        return (px - x) ** 2 + (py - y) ** 2
+
+    def dist(x, y):
+        inside, md = False, float("inf")
+        for poly in [pts] + hls:                       # even-odd: inside the outer ring and not in a hole
+            for a, b in zip(poly, poly[1:] + poly[:1]):
+                if (a[1] > y) != (b[1] > y) and x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1] + 1e-12) + a[0]:
+                    inside = not inside
+                md = min(md, seg_d2(x, y, a, b))
+        return (1 if inside else -1) * md ** 0.5
+
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+    size = min(x1 - x0, y1 - y0)
+    if size <= 0:
+        return ring[0][0], ring[0][1], 0.0
+    h = size / 2
+    heap = []
+    def cell(x, y, h):
+        d = dist(x, y)
+        return (-(d + h * 1.4142), x, y, h, d)
+    x = x0
+    while x < x1:
+        y = y0
+        while y < y1:
+            heapq.heappush(heap, cell(x + h, y + h, h)); y += size
+        x += size
+    cx = sum(xs) / len(xs); cy = sum(ys) / len(ys)
+    best = cell(cx, cy, 0)
+    n = 0
+    while heap and n < 4000:
+        c = heapq.heappop(heap); n += 1
+        if c[4] > best[4]:
+            best = c
+        if -c[0] - best[4] <= precision:
+            continue
+        hh = c[3] / 2
+        for dx in (-hh, hh):
+            for dy in (-hh, hh):
+                heapq.heappush(heap, cell(c[1] + dx, c[2] + dy, hh))
+    return round(best[2] / 60, 5), round(best[1] / 60 / k, 5), round(max(0.0, best[4]), 2)
+
+
+def _ring_area(ring):
+    from math import cos, radians
+    k = cos(radians(ring[0][0]))
+    return abs(sum((a[1] * k) * b[0] - (b[1] * k) * a[0] for a, b in zip(ring, ring[1:]))) / 2 * 3600
+
+
+def labels(out_dir=OUT_DIR):
+    """The label of every TMA / CTA / CTR, ACC sector and P / R / D area of the installed data:
+    [{layer, name, cls, up, lo, lat, lon, r (NM free around the point)}]."""
+    out = []
+    for layer in ("fi_tma", "fi_sectors", "fi_restricted"):
+        try:
+            gj = json.load(open(os.path.join(out_dir, "overlays", layer + ".geojson"), encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        feats = []
+        for f in gj.get("features", []):
+            ring = [(y, x) for x, y in (f.get("geometry") or {}).get("coordinates", [[]])[0]]
+            if len(ring) >= 4:
+                feats.append((_ring_area(ring), ring, f.get("properties") or {}))
+        feats.sort(key=lambda t: t[0])                       # small first: their labels win a clash
+        for i, (area, ring, pr) in enumerate(feats):
+            holes = [r2 for a2, r2, _ in feats[:i] if a2 < area * 0.9 and _point_in(ring, *r2[0]) and _point_in(ring, *r2[len(r2) // 2])]
+            lat, lon, r = _polylabel(ring, holes=holes)
+            name = pr.get("name", "")
+            if layer == "fi_sectors":
+                name = re.sub(r"^EF ACC SECT\s*", "SECT ", name)
+            elif layer == "fi_restricted":
+                name = name.split(" ")[0]                  # EFR51, EFD160NZ ...
+            up, lo = _short_alt(pr.get("upper")), _short_alt(pr.get("lower"))
+            if layer == "fi_sectors" and up in ("FL660", "UNL") and lo in ("SFC", "GND"):
+                up = lo = ""                               # every sector: FL 660 / SFC - the box says nothing
+            out.append({"layer": layer, "name": name, "cls": pr.get("cls", ""), "up": up, "lo": lo,
+                        "lat": lat, "lon": lon, "r": r})
+    return out
 
 
 def fir_ring(out_dir=OUT_DIR):
