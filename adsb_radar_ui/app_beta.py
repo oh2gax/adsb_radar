@@ -447,9 +447,12 @@ def fetch_data():
                                 o["hex"] = hexcode
 
                             # Callsign (JSON: fli -> flight)
-                            if "fli" in o and not (o.get("flight") or o.get("callsign") or o.get("ident")):
+                            # (a null "fli" is no callsign - not the text "None"; the label then shows the ICAO24)
+                            if o.get("fli") is not None and not (o.get("flight") or o.get("callsign") or o.get("ident")):
                                 try:
-                                    o["flight"] = str(o.get("fli")).strip()
+                                    cs = str(o.get("fli")).strip()
+                                    if cs and cs.lower() not in ("none", "null"):
+                                        o["flight"] = cs
                                 except Exception:
                                     pass
 
@@ -1029,6 +1032,8 @@ def _efhk_traffic(kind, hours):
     for row in rows:
         row["icao"] = (row["icao"] or "").upper()
         row["callsign"] = (row["callsign"] or "").strip() or None
+        if row["callsign"] and row["callsign"].lower() == "none":     # stored before 05.11.2026 from a null callsign
+            row["callsign"] = None
         if not row["reg"] or not row["type"]:
             reg, typ = lookup_meta(row["icao"])
             row["reg"], row["type"] = row["reg"] or reg, row["type"] or typ

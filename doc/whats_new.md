@@ -11,6 +11,7 @@ sub-bullets indented by two spaces) or plain paragraphs. **bold**, *italic* and
 
 - **Replay is coming** — the radar now records everything it shows, every second, for the last **30 days**: every aircraft within 150 NM of EFHK with its labels and the extended label's values, the go-arounds, landings and departures, and the METARs. The replay controls on the scope (play back any moment, 1×–60×, jump to a UTC time, share a link) come in the next version; recording starts now so that there are days of traffic to play back.
 - **Landings** — an aircraft passing over the runway higher up (above 1000 ft) is no longer counted as a landing in the EFHK traffic list.
+- **No more "None" labels** — an aircraft that sends no callsign is labelled with its ICAO24 code (as intended) instead of the word *None*.
 
 ## v.04112026 — Mobile app, go-around alarm, history line of the selected aircraft, TopSky labels with an extended label, EFHK traffic and METAR & TAF windows, move and zoom the map with the mouse, 1-second updates, What's new, own position
 
