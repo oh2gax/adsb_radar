@@ -1,7 +1,8 @@
 /* whatsnew.js - the "What's new" window (doc/whats_new.md via /api/whatsnew).
  * The link under the logo opens a scrollable window over the scope with the changes of
  * the ten newest versions, in the radar's own colours. A dot after the link marks a
- * version this browser has not opened yet. × / Esc / a click outside closes it.
+ * version this browser has not opened yet. × / Esc / the link again closes it. Since 2026-11-05 the
+ * window moves by its title and resizes from its corner like the other windows (atcwin.js, wnGeom).
  * (After MODE-S Wind's What's new window, web/templates/base.html.)
  */
 (function () {
@@ -38,9 +39,10 @@
   }
   const fmtVer = v => { const d = v.slice(2); return d.slice(0, 2) + '.' + d.slice(2, 4) + '.' + d.slice(4); };
 
-  let loaded = false;
+  let loaded = false, aw = null;
   async function open() {
-    win.hidden = false;
+    if (!aw && typeof AtcWindow !== 'undefined') aw = AtcWindow.make(win, { key: 'wnGeom', head: win.querySelector('.wn-head') });
+    if (aw) aw.show(); else win.hidden = false;
     try { localStorage.setItem('seenVersion', ver); } catch (_) { /* private mode */ }
     if (dot) dot.hidden = true;
     if (loaded) return;
@@ -61,8 +63,4 @@
   link.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); win.hidden ? open() : close(); });
   document.getElementById('wnClose').addEventListener('click', close);
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !win.hidden) close(); });
-  // a click outside the window closes it (capture: before the scope's own click handling)
-  document.addEventListener('mousedown', e => {
-    if (!win.hidden && !win.contains(e.target) && !link.contains(e.target)) close();
-  }, true);
 })();

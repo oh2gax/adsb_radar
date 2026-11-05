@@ -51,7 +51,11 @@ top-left logo; nothing has to be edited by hand.
   heading, drift, roll, wind, temperature and NACp from MODE-S Wind's Beast feed
 - Airports, navaids, waypoints and line overlays (coast, FIR, ATS routes, ILS, EFHK approach lines, …);
   `data/overlays/efhk_approach.geojson` = the EFHK finals from MODE-S Wind's `overlays/efhk_ils.geojson`
-- Four themes, label overlap avoidance, ICAO24 hex range filter, traffic list with links
+- Left pane in the ATC style of the windows (`templates/_side.html`, `static/js/sidepane.js`): sections that open /
+  close, on / off buttons (dark = on), button rows for choices, « hides the pane
+- **TRAFFIC** window: all aircraft in a movable / resizable table, sortable, a row click selects the aircraft
+  (`static/js/trafficlist.js`)
+- Four themes, label overlap avoidance, ICAO24 hex range filter
 - "FEED LOST" warning when the feed stops; targets are cleared after 30 s
 - All viewer settings are kept in the browser (localStorage); "Reset UI" clears them
 
@@ -169,7 +173,10 @@ kept in memory (80) and cached by the browser for a day. The app has no replay s
 `templates/app.html`, `static/js/app.js`, `static/css/app.css`. The scope is the desktop one
 (`radar.js` / `topsky.js`): the desktop sidebar (`templates/_side.html`, shared by both pages) is
 included hidden, `radar.js` reads and drives its controls, and the app's menu sets them — so a fix
-or feature of the scope is in both. The app's settings are kept apart: on `/app` every localStorage
+or feature of the scope is in both. The desktop pane draws the same controls as buttons: every on / off is a hidden check box inside
+`<label class="tg">` (inverted with `:has(input:checked)`), every choice a hidden `<select>` shown by
+`sidepane.js` as `<span class="seg" data-for="id">` — the ids, the change events and the localStorage
+keys are the same as before. The app's settings are kept apart: on `/app` every localStorage
 key is stored as `m.<key>` (phone defaults on the first start: TopSky, 20 NM, history line on,
 coastline / water / airport / FIR lines). Touch: pointer events on the canvas (one finger moves,
 two pinch-zoom around the fingers); `RADAR_HIT_PX = 24` (finger), `RADAR_NO_HOVER` (no hover

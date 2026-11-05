@@ -1,132 +1,99 @@
-{# The sidebar of the desktop page; the mobile app (/app) includes it hidden: radar.js reads and
-   drives these controls, the app's menu sets them. #}
-    <aside class="side">
-      <div class="logo">RADAR {{ version }}<div class="copyright">© Otso Laakso / OH2GAX</div><a href="#" id="whatsNewLink" class="whatsnew-link" data-version="{{ version }}" title="Changes of the latest versions">What's new<span id="whatsNewDot" class="whatsnew-dot" hidden></span></a> · <a href="/app" class="whatsnew-link" title="The radar for a phone: full screen, touch, all choices in one menu">Mobile version</a></div>
-      <div class="block">
-        <div class="label">Center</div>
-        <div class="value" id="centerReadout">{{ '%.4f' % center_lat }}, {{ '%.4f' % center_lon }}</div>
+{# The sidebar of the desktop page (2026-11-05: ATC style, static/js/sidepane.js); the mobile app (/app)
+   includes it hidden: radar.js reads and drives these controls, the app's menu sets them.
+   Every control keeps its id. An on/off setting is a hidden check box inside a <label class="tg">
+   (a click on the label toggles it; the label is drawn inverted while it is on); a choice is a
+   hidden <select> shown as a row of buttons (<span class="seg" data-for="id">, built by sidepane.js). #}
+    <aside class="side lp">
+      <div class="lp-top">
+        <div class="lp-logo"><b>RADAR</b><span class="lp-clock" id="utcClock" title="UTC (the replay time during a replay)">--:--:--</span></div>
+        <div class="lp-sub">{{ version }} · © Otso Laakso / OH2GAX</div>
+        <div class="lp-sub lp-links"><span><a href="#" id="whatsNewLink" class="whatsnew-link" data-version="{{ version }}" title="Changes of the latest versions">What's new<span id="whatsNewDot" class="whatsnew-dot" hidden></span></a> · <a href="/app" class="whatsnew-link" title="The radar for a phone: full screen, touch, all choices in one menu">Mobile version</a></span><button type="button" id="paneHide" class="lp-hide" title="Hide the left pane (» on the scope brings it back)">«</button></div>
+        <div class="lp-feed" id="status">Waiting for data...</div>
       </div>
-      <div class="block">
-        <div class="label">Manual Center</div>
-        <div class="controls" style="flex-wrap:wrap; gap:8px;">
-          <label>Lat <input id="centerLatInput" type="number" step="0.0001" style="width:110px;"></label>
-          <label>Lon <input id="centerLonInput" type="number" step="0.0001" style="width:110px;"></label>
-          <button class="btn" id="applyCenter">Apply</button>
-        </div>
-      </div>
-      <div class="block">
-        <div class="label">Own position</div>
-        <div class="controls" style="flex-wrap:wrap; gap:8px;">
-          <label>Lat <input id="ownLatInput" type="number" step="any" min="-90" max="90" placeholder="60.2500" style="width:110px;"></label>
-          <label>Lon <input id="ownLonInput" type="number" step="any" min="-180" max="180" placeholder="24.8500" style="width:110px;"></label>
-          <button class="btn" id="applyOwnPos">Apply</button>
-          <label title="Show a small marker at your own position"><input type="checkbox" id="ownPosOn"> Show</label>
-        </div>
-      </div>
-      <div class="block">
-        <div class="label">Theme</div>
-        <div class="controls">
-          <select id="themeSelect">
-            <option value="gray">Gray (ATC)</option>
-            <option value="green">Green (EL)</option>
-            <option value="full-el">Full EL (mono)</option>
-            <option value="full-el-yellow">Full EL (yellow)</option>
-          </select>
-        </div>
-        <div class="controls" id="grayBgControls" style="margin-top:6px;">
-          <label>Gray bg color: <input id="grayBgInput" type="text" value="#cfcfcf" style="width:110px;" /> <button class="btn micro" id="applyGrayBg">Apply</button> <button class="btn micro" id="resetUi">Reset UI</button></label>
-        </div>
-      </div>
-      <div class="block">
-        <div class="label">UTC</div>
-        <div class="value" id="utcClock">--:--:--</div>
-      </div>
-      <div class="block">
-        <div class="label">Zoom (nm)</div>
-        <div class="controls">
-          <button id="zoomOut" class="btn">-</button>
-          <input id="rangeNm" type="number" min="2" max="400" step="any" value="20" />
-          <button id="zoomIn" class="btn">+</button>
+
+      <div class="lp-sec" data-sec="view">
+        <div class="lp-h">VIEW<span class="lp-x"><span class="lp-sum"></span><i></i></span></div>
+        <div class="lp-b">
+          <div class="lp-r"><span class="lp-k">Range</span><button type="button" id="zoomOut" title="Zoom out">−</button><input id="rangeNm" class="wr" type="number" min="2" max="400" step="any" value="20"><button type="button" id="zoomIn" title="Zoom in">+</button><button type="button" id="paneHome" title="Back to the default centre (EFHK)">⌂</button><span class="note">NM</span></div>
+          <div class="lp-r"><span class="lp-k">Centre</span><span id="centerReadout">{{ '%.4f' % center_lat }}, {{ '%.4f' % center_lon }}</span></div>
+          <div class="lp-r"><span class="lp-k"></span><input id="centerLatInput" type="number" step="0.0001" title="Latitude" placeholder="lat"><input id="centerLonInput" type="number" step="0.0001" title="Longitude" placeholder="lon"><button type="button" id="applyCenter">Set</button></div>
+          <div class="lp-r"><span class="lp-k">Theme</span>
+            <select id="themeSelect" class="seg-src">
+              <option value="gray" data-s="GRAY">Gray (ATC)</option>
+              <option value="green" data-s="GREEN">Green (EL)</option>
+              <option value="full-el" data-s="EL">Full EL (mono)</option>
+              <option value="full-el-yellow" data-s="YEL">Full EL (yellow)</option>
+            </select><span class="seg" data-for="themeSelect"></span></div>
+          <div class="lp-r" id="grayBgControls"><span class="lp-k">Bg</span><input id="grayBgInput" type="text" value="#cfcfcf" title="Background colour of the Gray theme"><button type="button" id="applyGrayBg">Apply</button></div>
         </div>
       </div>
 
-      <div class="block">
-        <div class="label">Labels & Navaids</div>
-        <div class="controls toggles ui-controls">
-          <label title="TopSky: three-line labels with leader lines; mouse over or click an aircraft for the extended label">Label style:
-            <select id="labelStyle">
-              <option value="classic" selected>Classic</option>
-              <option value="topsky">TopSky (ATC)</option>
-            </select>
-          </label>
-          <label>Label mode:
-            <select id="labelMode">
-              <option value="auto" selected>Auto (Callsign→ICAO24)</option>
-              <option value="callsign">Callsign</option>
-              <option value="icao">ICAO24</option>
-            </select>
-          </label>
-          <label><input type="checkbox" id="showCallsign" checked> Show callsign (used in Auto)</label>
-          <label><input type="checkbox" id="showAlt" checked> Alt/FL</label>
-          <label><input type="checkbox" id="showHdg"> Hdg</label>
-          <label><input type="checkbox" id="showReg" checked> Reg</label>
-          <label><input type="checkbox" id="showType"> Type</label>
-          <label><input type="checkbox" id="showTrail" checked> Trail</label>
-          <label title="A thin line of the whole flight of the selected aircraft"><input type="checkbox" id="showHistory" checked> History line</label>
-          <label>Trail length:
-            <select id="trailLenSec">
-              <option value="30">30 s</option>
-              <option value="60" selected>1 min</option>
-            </select>
-          </label>
-          <label><input type="checkbox" id="showSpd" checked> Speed</label>
-          <label><input type="checkbox" id="showSquawk" checked> Squawk</label>
-          <label><input type="checkbox" id="showVector" checked> Vector</label>
-          <label><input type="checkbox" id="preventOverlap" checked> Prevent label overlap</label>
-          <label>Vector time:
-            <select id="vectorMins">
-              <option value="0.5" selected>0.5 min</option>
+      <div class="lp-sec" data-sec="windows">
+        <div class="lp-h">WINDOWS<span class="lp-x"><span class="lp-sum"></span><i></i></span></div>
+        <div class="lp-b">
+          <div class="chips">
+            <label class="tg" title="The list of all aircraft in a window on the scope"><input type="checkbox" id="tlOn" hidden>TRAFFIC LIST</label>
+            <label class="tg" title="Landings and departures at EFHK (from MODE-S Wind) in a window on the scope"><input type="checkbox" id="trOn" hidden>EFHK TRAFFIC</label>
+            <label class="tg" title="The METAR and TAF window (and the pilot reports)"><input type="checkbox" id="wxOn" hidden>METAR &amp; TAF<span id="wxSideDot" class="rp-dot" hidden title="A new pilot report near EFHK (METAR &amp; TAF window → REPORTS)"></span></label>
+            <button type="button" id="rpOpen" title="Play back any moment of the last 30 days (1×–60×): the replay bar on the scope">REPLAY</button>
+          </div>
+          <div class="lp-r"><span class="lp-k">METAR</span><input id="wxIcaoInput" class="icao-input w4" type="text" maxlength="4" value="EFHK" spellcheck="false" autocomplete="off" title="The airport of the METAR &amp; TAF window"><button type="button" id="applyWx">Apply</button></div>
+        </div>
+      </div>
+
+      <div class="lp-sec" data-sec="labels">
+        <div class="lp-h">LABELS<span class="lp-x"><span class="lp-sum"></span><i></i></span></div>
+        <div class="lp-b">
+          <div class="lp-r" title="TopSky: three-line labels with leader lines; mouse over or click an aircraft for the extended label"><span class="lp-k">Style</span>
+            <select id="labelStyle" class="seg-src">
+              <option value="classic" data-s="CLASSIC" selected>Classic</option>
+              <option value="topsky" data-s="TOPSKY">TopSky (ATC)</option>
+            </select><span class="seg" data-for="labelStyle"></span></div>
+          <div class="lp-r" title="AUTO: the callsign, or the ICAO24 code when there is none"><span class="lp-k">Name</span>
+            <select id="labelMode" class="seg-src">
+              <option value="auto" data-s="AUTO" selected>Auto (Callsign→ICAO24)</option>
+              <option value="callsign" data-s="CS">Callsign</option>
+              <option value="icao" data-s="ICAO24">ICAO24</option>
+            </select><span class="seg" data-for="labelMode"></span></div>
+          <div class="lp-r lp-top-al"><span class="lp-k">Show</span><span class="chips lp-w">
+            <label class="tg" title="Callsign (AUTO: the ICAO24 code when off or none)"><input type="checkbox" id="showCallsign" checked hidden>CS</label>
+            <label class="tg" title="Altitude / flight level"><input type="checkbox" id="showAlt" checked hidden>ALT</label>
+            <label class="tg" title="Heading"><input type="checkbox" id="showHdg" hidden>HDG</label>
+            <label class="tg" title="Ground speed"><input type="checkbox" id="showSpd" checked hidden>SPD</label>
+            <label class="tg" title="Squawk"><input type="checkbox" id="showSquawk" checked hidden>SQK</label>
+            <label class="tg" title="Registration"><input type="checkbox" id="showReg" checked hidden>REG</label>
+            <label class="tg" title="Aircraft type"><input type="checkbox" id="showType" hidden>TYPE</label>
+          </span></div>
+          <div class="lp-r"><span class="lp-k"></span><label class="tg" title="Move the labels so that they do not cover each other"><input type="checkbox" id="preventOverlap" checked hidden>NO OVERLAP</label></div>
+        </div>
+      </div>
+
+      <div class="lp-sec" data-sec="targets">
+        <div class="lp-h">TARGETS<span class="lp-x"><span class="lp-sum"></span><i></i></span></div>
+        <div class="lp-b">
+          <div class="lp-r" title="Speed vector: where the aircraft is after this time"><span class="lp-k">Vector</span><label class="tg"><input type="checkbox" id="showVector" checked hidden>ON</label>
+            <select id="vectorMins" class="seg-src">
+              <option value="0.5" data-s=".5" selected>0.5 min</option>
               <option value="1">1 min</option>
               <option value="2">2 min</option>
               <option value="3">3 min</option>
               <option value="5">5 min</option>
-            </select>
-          </label>
-
-          <label><input type="checkbox" id="showRings" checked> Rings</label>
-          <label>Ring spacing:
-            <select id="ringSpacing">
-              <option value="auto" selected>Auto</option>
-              <option value="5">5 nm</option>
-              <option value="10">10 nm</option>
-            </select>
-          </label>
-
-          <label><input type="checkbox" id="showAirports" checked> Airports</label>
-          <label><input type="checkbox" id="showNavaids" checked> Navaids</label>
-          <label><input type="checkbox" id="showFixes"> Waypoints</label>
-          <div class="label" style="margin-top:8px">Navaid range (NM)</div>
-          <div class="controls">
-            <select id="navRangeNm">
-              <option value="100" selected>100</option>
-              <option value="250">250</option>
-              <option value="500">500</option>
-              <option value="1000">1000</option>
-            </select>
-            <button class="btn" id="reloadNav">Reload</button>
-          </div>
-          <div class="label" style="margin-top:8px">Stale timeout</div>
-          <div class="controls">
+            </select><span class="seg" data-for="vectorMins" data-num="1"></span><span class="note">min</span></div>
+          <div class="lp-r"><span class="lp-k">Trail</span><label class="tg"><input type="checkbox" id="showTrail" checked hidden>ON</label>
+            <select id="trailLenSec" class="seg-src">
+              <option value="30" data-s="30 s">30 s</option>
+              <option value="60" data-s="1 min" selected>1 min</option>
+            </select><span class="seg" data-for="trailLenSec"></span></div>
+          <div class="lp-r" title="A thin line of the whole flight of the selected aircraft"><span class="lp-k">History</span><label class="tg"><input type="checkbox" id="showHistory" checked hidden>ON</label><span class="note">line of the selected</span></div>
+          <div class="lp-r" title="Remove an aircraft not heard for this long"><span class="lp-k">Stale</span>
             <select id="staleTimeout">
               <option value="0">Off</option>
               <option value="2" selected>2 min</option>
               <option value="3">3 min</option>
               <option value="5">5 min</option>
               <option value="10">10 min</option>
-            </select>
-          </div>
-          <div class="label" style="margin-top:8px">Position-loss timeout</div>
-          <div class="controls">
+            </select></div>
+          <div class="lp-r" title="Remove an aircraft whose position has not changed for this long"><span class="lp-k">Pos loss</span>
             <select id="posTimeout">
               <option value="0">Off</option>
               <option value="30" selected>30 s</option>
@@ -134,80 +101,80 @@
               <option value="120">2 min</option>
               <option value="180">3 min</option>
               <option value="300">5 min</option>
-            </select>
-          </div>
-          <div class="label" style="margin-top:8px">Traffic sort</div>
-          <div class="controls">
-            <select id="trafficSort">
-              <option value="rangeAsc">Range: near → far</option>
-              <option value="rangeDesc">Range: far → near</option>
-              <option value="altDesc">Altitude: high → low</option>
-              <option value="altAsc" selected>Altitude: low → high</option>
-              <option value="labelAsc">Label: A → Z</option>
-            </select>
-          </div>
+            </select></div>
         </div>
       </div>
 
-      <div class="block">
-        <div class="label">Altimeter</div>
-        <div class="controls">
-          <label>QNH (hPa): <input type="number" id="qnhInput" value="1013" step="1" min="950" max="1050" style="width:90px;"> <button class="btn micro" id="qnhUp">▲</button> <button class="btn micro" id="qnhDown">▼</button></label>
-        </div>
-        <div class="controls" style="margin-top:6px;">
-          <label title="Use QNH from the latest METAR" style="white-space:nowrap;"><input type="checkbox" id="qnhAuto"> Auto</label>
-          <span class="value small" id="qnhInfo"></span>
+      <div class="lp-sec" data-sec="map">
+        <div class="lp-h">MAP<span class="lp-x"><span class="lp-sum"></span><i></i></span></div>
+        <div class="lp-b">
+          <div class="lp-r"><span class="lp-k">Rings</span><label class="tg"><input type="checkbox" id="showRings" checked hidden>ON</label>
+            <select id="ringSpacing" class="seg-src">
+              <option value="auto" data-s="AUTO" selected>Auto</option>
+              <option value="5" data-s="5">5 nm</option>
+              <option value="10" data-s="10">10 nm</option>
+            </select><span class="seg" data-for="ringSpacing"></span><span class="note">NM</span></div>
+          <div class="lp-r"><span class="lp-k">Points</span><span class="chips">
+            <label class="tg" title="Airports"><input type="checkbox" id="showAirports" checked hidden>APT</label>
+            <label class="tg" title="Navaids (VOR, NDB, DME)"><input type="checkbox" id="showNavaids" checked hidden>NAVAID</label>
+            <label class="tg" title="Waypoints"><input type="checkbox" id="showFixes" hidden>WPT</label>
+          </span></div>
+          <div class="lp-r" title="Airports, navaids and waypoints are loaded within this distance of the centre"><span class="lp-k">Within</span>
+            <select id="navRangeNm" class="seg-src">
+              <option value="100" selected>100</option>
+              <option value="250">250</option>
+              <option value="500">500</option>
+              <option value="1000">1000</option>
+            </select><span class="seg" data-for="navRangeNm"></span><span class="note">NM</span><button type="button" id="reloadNav" hidden>Reload</button></div>
+          <div class="lp-r lp-top-al"><span class="lp-k">Lines</span><div id="overlayList" class="chips lp-w">Loading…</div></div>
+          <div class="lp-r" title="Detail of the lines: fewer points draw faster"><span class="lp-k">Detail</span>
+            <select id="overlayDecimate" class="seg-src">
+              <option value="1" data-s="FULL">Full</option>
+              <option value="2" data-s="1/2" selected>1/2</option>
+              <option value="3" data-s="1/3">1/3</option>
+              <option value="4" data-s="1/4">1/4</option>
+            </select><span class="seg" data-for="overlayDecimate"></span></div>
         </div>
       </div>
-      <div class="block">
-        <div class="label">METAR &amp; TAF <span id="wxSideDot" class="rp-dot" hidden title="A new pilot report near EFHK (METAR &amp; TAF window → REPORTS)"></span></div>
-        <div class="controls" style="flex-wrap:wrap; gap:8px;">
-          <label>ICAO <input id="wxIcaoInput" class="icao-input" type="text" maxlength="4" value="EFHK" spellcheck="false" autocomplete="off"></label>
-          <button class="btn" id="applyWx">Apply</button>
-          <label title="Show the METAR and TAF window on the scope"><input type="checkbox" id="wxOn"> Show</label>
+
+      <div class="lp-sec" data-sec="alt">
+        <div class="lp-h">ALTIMETER<span class="lp-x"><span class="lp-sum"></span><i></i></span></div>
+        <div class="lp-b">
+          <div class="lp-r"><span class="lp-k">QNH</span><input type="number" id="qnhInput" class="wr" value="1013" step="1" min="950" max="1050" title="QNH in hPa: the levels below 5000 ft"><button type="button" id="qnhUp" title="+1 hPa">▲</button><button type="button" id="qnhDown" title="−1 hPa">▼</button><label class="tg" title="Use the QNH of the latest METAR"><input type="checkbox" id="qnhAuto" hidden>AUTO</label></div>
+          <div class="note" id="qnhInfo"></div>
         </div>
       </div>
-      <div class="block">
-        <div class="label">EFHK traffic</div>
-        <div class="controls">
-          <label title="Landings and departures at EFHK (from MODE-S Wind) in a window on the scope"><input type="checkbox" id="trOn"> Show arrivals &amp; departures</label>
+
+      <div class="lp-sec" data-sec="own" data-closed="1">
+        <div class="lp-h">OWN POSITION<span class="lp-x"><span class="lp-sum"></span><i></i></span></div>
+        <div class="lp-b">
+          <div class="lp-r"><span class="lp-k">Lat Lon</span><input id="ownLatInput" type="number" step="any" min="-90" max="90" placeholder="60.2500" title="Latitude, decimal degrees"><input id="ownLonInput" type="number" step="any" min="-180" max="180" placeholder="24.8500" title="Longitude, decimal degrees"></div>
+          <div class="lp-r"><span class="lp-k"></span><button type="button" id="applyOwnPos">Apply</button><label class="tg" title="Show a small marker at your own position"><input type="checkbox" id="ownPosOn" hidden>SHOW</label></div>
         </div>
       </div>
-      <div class="block">
-        <div class="label">Replay</div>
-        <div class="controls">
-          <button class="btn" id="rpOpen" title="Play back any moment of the last 30 days: the replay bar on the scope">Replay bar</button>
-          <span class="value small">the last 30 days, 1×–60×</span>
-        </div>
-      </div>
-      <div class="block">
-        <div class="label">ICAO24 filter (hex ranges)</div>
-        <div class="controls">
+
+      <div class="lp-sec" data-sec="filter" data-closed="1">
+        <div class="lp-h">ICAO24 FILTER<span class="lp-x"><span class="lp-sum"></span><i></i></span></div>
+        <div class="lp-b">
           <textarea id="icaoFilter" placeholder="e.g. 600000-6FFFFF, 7C0000-7FFFFF"></textarea>
-          <button id="applyFilter" class="btn wide">Apply</button>
+          <div class="lp-r"><button type="button" id="applyFilter">Apply</button><span class="note">empty = all aircraft</span></div>
         </div>
       </div>
-      <div class="block">
-        <div class="label">Overlays (lines)</div>
-        <div class="controls ui-controls">
-          <div id="overlayList" class="value small">Loading overlay layers…</div>
-          <label>Detail
-            <select id="overlayDecimate">
-              <option value="1">Full</option>
-              <option value="2" selected>1/2</option>
-              <option value="3">1/3</option>
-              <option value="4">1/4</option>
-            </select>
-          </label>
+
+      <div class="lp-sec" data-sec="status" data-closed="1">
+        <div class="lp-h">STATUS<span class="lp-x"><span class="lp-sum"></span><i></i></span></div>
+        <div class="lp-b">
+          <div class="note" id="navMeta">Navaids: -- / -- / --</div>
         </div>
       </div>
-      <div class="block">
-        <div class="label">Status</div>
-        <div class="value small" id="status">Waiting for data...</div>
-        <div class="value small" id="navMeta">Navaids: -- / -- / --</div>
-      </div>
-      <div class="block list">
-        <div class="label">Traffic <a href="#" id="copyTrafficBtn" class="copybtn" title="Copy traffic to clipboard">Copy</a></div>
-        <ul id="trafficList"></ul>
-      </div>
+
+      <select id="trafficSort" hidden>
+        <option value="rangeAsc">Range: near → far</option>
+        <option value="rangeDesc">Range: far → near</option>
+        <option value="altDesc">Altitude: high → low</option>
+        <option value="altAsc" selected>Altitude: low → high</option>
+        <option value="labelAsc">Label: A → Z</option>
+        <option value="labelDesc">Label: Z → A</option>
+      </select>
+      <div class="lp-foot"><button type="button" id="resetUi" title="All settings of this page back to the defaults">RESET UI</button><span class="note">all settings back to defaults</span></div>
     </aside>

@@ -497,6 +497,7 @@ canvas.addEventListener('click', e => {
   if(!hit && hist && !hist.follow) histClear();
   requestDraw();
 });
+window.radarDeselect = () => { if(tsUi) tsUi.select(null); classicSel = null; histClear(); requestDraw(); };
 document.addEventListener('keydown', e => {
   if(e.key !== 'Escape' || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;
   if(tsUi) tsUi.select(null);
@@ -1015,13 +1016,13 @@ async function loadOverlayMeta(){
       (cats[cat]||(cats[cat]=[])).push(nm);
     });
     if(Object.keys(layers).length===0){ listEl.textContent='No .geojson files in /data/overlays'; return; }
+    // one toggle button per category (the left pane's MAP → Lines); the layers stay as hidden check boxes
+    const CAT_SHORT = {Hydro:'WATER', Coastlines:'COAST', Navaids:'NAVAIDS', Other:'OTHER'};
     listEl.innerHTML = Object.entries(cats).map(([cat,names])=>{
       const anyChecked = names.some(nm=>overlayLayers[nm].checked);
-      const items = names.map(nm=>{
-        const o=overlayLayers[nm];
-        return `<label><input type="checkbox" data-ov="${nm}" ${o.checked?'checked':''}> ${nm} <span class="muted">(${o.count})</span></label>`;
-      }).join('<br>');
-      return `<div class="ov-group"><div class="ov-head"><label><input type="checkbox" data-ovcat="${cat}" ${anyChecked?'checked':''}> ${cat}</label></div><div class="ov-items">${items}</div></div>`;
+      const tip = names.map(nm=>`${nm} (${overlayLayers[nm].count})`).join(', ');
+      const items = names.map(nm=>`<input type="checkbox" data-ov="${nm}" ${overlayLayers[nm].checked?'checked':''} hidden>`).join('');
+      return `<label class="tg" title="${escapeHTML(tip)}"><input type="checkbox" data-ovcat="${cat}" ${anyChecked?'checked':''} hidden>${(CAT_SHORT[cat]||cat).toUpperCase()}</label>${items}`;
     }).join('');
     listEl.querySelectorAll('input[type=checkbox][data-ov]').forEach(cb=>{
       cb.onchange=()=>{ const nm=cb.dataset.ov; overlayLayers[nm].checked=cb.checked; localStorage.setItem('ov_'+nm, cb.checked?'1':'0'); requestOverlayFetch(); };
@@ -1464,8 +1465,9 @@ if(isTypeOn() && ac.type){ infoParts.push(ac.type); } /*TYPE_AFTER_REG*/
     tsTargetsLast = tsTargets;
   } else { tsRects = {}; tsTargetsLast = []; }
 
-  // MODE-S / no-pos list and the traffic list: at most once a second
-  if(Date.now() - _trafficBuildTs >= 1000 && !_trafficPointerDown){
+  // MODE-S / no-pos list and the traffic list (TRAFFIC window): at most once a second, only while the window is open
+  const _tlWin = document.getElementById('tlWindow');
+  if(_tlWin && !_tlWin.hidden && Date.now() - _trafficBuildTs >= 1000 && !_trafficPointerDown){
   _trafficBuildTs = Date.now();
   const drawnHex = new Set(posList.map(x => x.hex));
   const noPos = [];
@@ -1478,7 +1480,7 @@ if(isTypeOn() && ac.type){ infoParts.push(ac.type); } /*TYPE_AFTER_REG*/
     label = label + '*';
     const altStr = formatAltWithTrend(ac.alt, ac.vr);
     const altNum = Number.isFinite(ac.alt) ? Number(ac.alt) : NaN;
-    noPos.push({label, altStr, altNum, squawk: ac.squawk, reg: ac.reg, type: ac.type, sel_alt_ft: ac.sel_alt_ft, sel_alt_hundreds: ac.sel_alt_hundreds});
+    noPos.push({label, hex: ac.hex, vr: ac.vr, altStr, altNum, squawk: ac.squawk, reg: ac.reg, type: ac.type, sel_alt_ft: ac.sel_alt_ft, sel_alt_hundreds: ac.sel_alt_hundreds});
   }
 
   // Sort & render list
@@ -1490,46 +1492,43 @@ if(isTypeOn() && ac.type){ infoParts.push(ac.type); } /*TYPE_AFTER_REG*/
     case 'altDesc': rows.sort((a,b)=> { const av=altVal(a), bv=altVal(b); if(Number.isFinite(av)&&Number.isFinite(bv)) return bv-av; if(Number.isFinite(av)) return -1; if(Number.isFinite(bv)) return 1; return labelVal(a).localeCompare(labelVal(b)); }); break;
     case 'altAsc': rows.sort((a,b)=> { const av=altVal(a), bv=altVal(b); if(Number.isFinite(av)&&Number.isFinite(bv)) return av-bv; if(Number.isFinite(av)) return -1; if(Number.isFinite(bv)) return 1; return labelVal(a).localeCompare(labelVal(b)); }); break;
     case 'labelAsc': rows.sort((a,b)=> labelVal(a).localeCompare(labelVal(b))); break;
+    case 'labelDesc': rows.sort((a,b)=> labelVal(b).localeCompare(labelVal(a))); break;
     case 'rangeAsc':
     default: rows.sort((a,b)=> (a._rowType==='pos'&&b._rowType==='pos')? (a.d-b.d) : (a._rowType==='pos'? -1 : (b._rowType==='pos'? 1 : labelVal(a).localeCompare(labelVal(b)))) ); break;
   }
 
 
   
-const lis = rows.slice(0, 80).map(function(item){
+// the TRAFFIC window (index.html #tlWindow, static/js/trafficlist.js): one table row per aircraft;
+// a click on a row selects the aircraft, the ↗ opens flightradar24 / ADS-B Exchange
+const selNow = selectedHex();
+const lis = rows.slice(0, 200).map(function(item){
   var raw = String(item.label || '');
   var pure = raw.replace(/\*+$/, '');
   var star = raw.endsWith('*') ? '*' : '';
   var isHex = /^[0-9A-F]{6}$/.test(pure);
   var isCs  = /^[0-9A-Z]{3,8}$/.test(pure) && !isHex;
-  var link  = isCs
-    ? '<a href="https://www.flightradar24.com/callsign/' + encodeURIComponent(pure) + '" target="_blank" rel="noopener noreferrer">' + escapeHTML(pure) + '</a>'
-    : isHex
-    ? '<a href="https://globe.adsbexchange.com/?icao=' + encodeURIComponent(pure) + '" target="_blank" rel="noopener noreferrer">' + escapeHTML(pure) + '</a>'
-    : escapeHTML(pure);
-
+  var url = isCs ? 'https://www.flightradar24.com/callsign/' + encodeURIComponent(pure)
+          : isHex ? 'https://globe.adsbexchange.com/?icao=' + encodeURIComponent(pure) : '';
+  var ext = url ? '<a href="' + url + '" target="_blank" rel="noopener noreferrer" title="' + (isCs ? 'flightradar24' : 'ADS-B Exchange') + '">↗</a>' : '';
   var sq = (item.squawk && String(item.squawk).trim()) || '----';
   var emg = (sq==='7500'||sq==='7600'||sq==='7700');
-  var cls = emg ? 'emg' : '';
-
-  var regTxt  = (typeof isRegOn==='function' && isRegOn() && item.reg) ? (' ' + escapeHTML(item.reg)) : '';
-  var typeTxt = (typeof isTypeOn==='function' && isTypeOn() && item.type) ? (' ' + escapeHTML(item.type)) : '';
-
-  if (item && item._rowType==='pos') {
-    var nm = escapeHTML(item.d.toFixed(1).padStart(5,' '));
-    var _altStr = formatAltWithTrend(item.alt, item.vr);
-    try{ var _h=_selHundreds(item); var _cur=(Number.isFinite(item.alt)? Math.round(item.alt/100): null); _altStr = _joinAlt(_altStr, _cur, _h); }catch(_e){}
-    var altHtml = altToHTML(_altStr);
-    var sqSafe = escapeHTML(sq);
-    return '<li><span>' + link + star + regTxt + typeTxt + ' · ' + nm + ' · ' + altHtml + ' <span class="sq ' + cls + '">' + sqSafe + '</span></span></li>';
-  } else {
-    var _altStr2 = item.altStr;
-    try{ var _h=_selHundreds(item); var _cur=(Number.isFinite(item.altNum)? Math.round(item.altNum/100): null); _altStr2 = _joinAlt(_altStr2, _cur, _h); }catch(_e){}
-    var altHtml2 = altToHTML(_altStr2);
-    var sqSafe2 = escapeHTML(sq);
-    return '<li><span>' + link + star + regTxt + typeTxt + ' · ' + altHtml2 + ' <span class="sq ' + cls + '">' + sqSafe2 + '</span></span></li>';
-  }
+  // the level as in the TopSky label: hundreds of feet (QNH-corrected below 5000 ft), trend, selected level (032↓030)
+  var _a = (item._rowType==='pos') ? item.alt : item.altNum;
+  var altStr = Topsky.labelLines({alt: Number.isFinite(_a) ? _a : NaN, vr: item.vr, sel_alt_ft: item.sel_alt_ft}, '', tsLvl3)[1];
+  var nm = (item._rowType==='pos' && Number.isFinite(item.d)) ? item.d.toFixed(1) : '';
+  var hex = escapeHTML(String(item.hex || ''));
+  return '<tr data-hex="' + hex + '"' + (item.hex && item.hex === selNow ? ' class="sel"' : '') + '>'
+       + '<td class="tl-cs">' + escapeHTML(pure) + star + '</td><td>' + altToHTML(altStr) + '</td>'
+       + '<td class="sq' + (emg ? ' emg' : '') + '">' + escapeHTML(sq) + '</td><td class="n">' + nm + '</td>'
+       + '<td>' + escapeHTML(item.reg || '') + '</td><td>' + escapeHTML(item.type || '') + '</td><td class="tl-ext">' + ext + '</td></tr>';
 });
+  const tlCount = document.getElementById('tlCount');
+  if(tlCount){
+    const nPos = rows.filter(r => r._rowType === 'pos').length;
+    const t = `${rows.length} aircraft · ${nPos} with position` + (rows.length > 200 ? ' · the first 200 shown' : '');
+    if(tlCount.textContent !== t) tlCount.textContent = t;
+  }
   const html = lis.join('');
   const nowTs = Date.now();
   if(trafficListEl && !_trafficPointerDown && (html !== _trafficLastHTML) && (nowTs - _trafficLastTs > 250)){
@@ -1579,7 +1578,7 @@ requestAnimationFrame(animate);
   function doCopy(){
     const ul = document.getElementById('trafficList');
     if (!ul) return;
-    const lines = Array.from(ul.querySelectorAll('li')).map(li => li.textContent.replace(/\s+/g,' ').trim());
+    const lines = Array.from(ul.querySelectorAll('tr')).map(tr => Array.from(tr.cells).slice(0, 6).map(td => td.textContent.trim()).filter(Boolean).join(' · '));
     const txt = lines.join('\n');
     const done = () => {
       const old = btn.textContent;

@@ -12,8 +12,8 @@
     {% include "_side.html" %}
     <main class="stage">
       <canvas id="radarCanvas"></canvas>
-      <div id="wnWindow" class="atc-window wn-window" role="dialog" aria-label="What's new" hidden>
-        <div class="wn-head"><span>WHAT'S NEW</span><button id="wnClose" class="wn-close" type="button" title="Close (Esc)">&times;</button></div>
+      <div id="wnWindow" class="atc-window wn-window scope-obst" role="dialog" aria-label="What's new" hidden>
+        <div class="wn-head" title="Drag to move; resize from the lower-right corner"><span>WHAT'S NEW</span><button id="wnClose" class="wn-close" type="button" title="Close (Esc)">&times;</button></div>
         <div id="wnBody" class="wn-body">Loading…</div>
       </div>
       <div id="wxWindow" class="atc-window wx-window scope-obst" role="dialog" aria-label="METAR and TAF" hidden>
@@ -35,10 +35,21 @@
         <div id="trCount" class="tr-count"></div>
         <div id="trBody" class="wn-body tr-body">Loading…</div>
       </div>
+      <div id="tlWindow" class="atc-window tl-window scope-obst" role="dialog" aria-label="Traffic" hidden>
+        <div class="wn-head tl-head" title="Drag to move; resize from the lower-right corner"><span>TRAFFIC</span><span class="tl-hbtns"><button id="copyTrafficBtn" class="wn-close tl-copy" type="button" title="Copy the list as text">Copy</button><button id="tlClose" class="wn-close" type="button" title="Close">&times;</button></span></div>
+        <div id="tlCount" class="tl-count"></div>
+        <div class="wn-body tl-body">
+          <table class="tl-table">
+            <thead><tr><th data-sort="label" title="Sort by the callsign">CALLSIGN</th><th data-sort="alt" title="Sort by the level">LVL</th><th>SQK</th><th data-sort="range" class="n" title="Sort by the distance from the centre">NM</th><th>REG</th><th>TYPE</th><th></th></tr></thead>
+            <tbody id="trafficList"></tbody>
+          </table>
+        </div>
+      </div>
       <div class="overlayBtns scope-obst">
         <button class="btn" id="btnZoomIn" title="Zoom in (smaller range)">+</button>
         <button class="btn" id="btnZoomOut" title="Zoom out (larger range)">&minus;</button>
         <button class="btn" id="btnHome" title="Back to the default centre (EFHK). Drag the map to move it.">&#8962;</button>
+        <button class="btn" id="btnPane" title="Show the left pane" hidden>&raquo;</button>
       </div>
     </main>
   </div>
@@ -54,5 +65,7 @@
   <script src="/static/js/reports.js?v={{ asset_tag }}"></script>
   <script src="/static/js/wx.js?v={{ asset_tag }}"></script>
   <script src="/static/js/traffic.js?v={{ asset_tag }}"></script>
+  <script src="/static/js/trafficlist.js?v={{ asset_tag }}"></script>
+  <script src="/static/js/sidepane.js?v={{ asset_tag }}"></script>
 </body>
 </html>
