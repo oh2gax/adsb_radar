@@ -49,6 +49,16 @@ body.app-body { background: var(--radar-bg); font-family: var(--amono); -webkit-
 .app-page { position: fixed; left: 0; right: 0; top: calc(var(--abar) + var(--safe-t)); bottom: 0; background: var(--ag); color: var(--ak);
   font-size: 13px; display: flex; flex-direction: column; z-index: 10; padding: 0 var(--safe-r) 0 var(--safe-l); }
 .app-page[hidden] { display: none; }
+/* the shared report styles (style.css .rp-*) take the page's colours */
+.app-page { --radar-text: #000; --radar-bg: var(--ag); --radar-ring: #777; }
+.app-page .rp-bar { font-size: 12px; gap: 8px 12px; }
+.app-page .rp-bar[hidden], .app-page .rp-list[hidden], .app-page .app-wx-bar[hidden], .app-page .app-pbody[hidden] { display: none; }
+.app-page .rp-seg button { padding: 7px 10px; font-size: 12px; }
+.app-page .rp-chk { min-height: 26px; } .app-page .rp-chk i { width: 12px; height: 12px; }
+.app-rep { padding: 0 12px calc(16px + var(--safe-b)); font-size: 12.5px; }
+.app-rep .rp-it { padding: 8px 0; border-top-color: #777; }
+.app-page .rp-sev { color: #c00000; }
+#wxTabsM button { position: relative; }
 .app-pbar { padding: 10px 12px 6px; display: flex; flex-wrap: wrap; gap: 8px 14px; flex: none; }
 .app-pbody { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: calc(16px + var(--safe-b)); -webkit-user-select: text; user-select: text; }
 .app-seg { display: inline-flex; }

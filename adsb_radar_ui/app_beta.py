@@ -1071,6 +1071,49 @@ def _msw_rows(kind, since, rows):
                              "rwy": rwy or _dep_runway(r[7], r[8], r[6]), "ga": 0})
 
 
+# --- Pilot reports (ARS / WXREP / SIGMET) and METAR windshear groups, from MODE-S Wind's database ---
+# MODE-S Wind polls the FMI aviation weather page (ilmailusaa.fi) every 30 min and parses each message
+# (collector/wx_reports.py: tables pilot_reports, metar_reports); read here read-only, the last 24 h.
+REPORTS_CACHE_SEC = 60
+_reports_cache = {"t": 0, "out": None}
+
+
+def _wx_reports():
+    since = time.time() - 24 * 3600
+    with _msw_lock:
+        conn = _msw_db.get()
+        if conn is None:
+            raise FileNotFoundError("MODE-S Wind database not found")
+        reps = conn.execute(
+            "SELECT ts, obs_ts, kind, ident, phen, place, lat, lon, lo_ft, hi_ft, near, raw FROM pilot_reports "
+            "WHERE ts >= ? ORDER BY COALESCE(obs_ts, ts) DESC LIMIT 500", (since,)).fetchall()
+        mets = conn.execute(
+            "SELECT ts, raw, ws FROM metar_reports WHERE station = ? AND ts >= ? AND ws IS NOT NULL "
+            "ORDER BY ts DESC LIMIT 200", (config.METAR_STATION, since)).fetchall()
+        checked = conn.execute("SELECT MAX(fetched) FROM pilot_reports").fetchone()[0]
+    keys = ("t", "obs_t", "kind", "ident", "phen", "place", "lat", "lon", "lo_ft", "hi_ft", "near", "raw")
+    return {"reports": [dict(zip(keys, r)) for r in reps],
+            "metars": [{"t": r[0], "raw": r[1], "ws": r[2]} for r in mets],
+            "checked": checked, "station": config.METAR_STATION, "near_nm": 30, "error": None}
+
+
+@app.route("/api/wx/reports")
+def api_wx_reports():
+    """The pilot reports of the last 24 h (Finland) and the EFHK METARs with a windshear group,
+    newest first; the browser filters them (12 / 24 h, near EFHK, kinds)."""
+    now = time.time()
+    if _reports_cache["out"] is None or now - _reports_cache["t"] > REPORTS_CACHE_SEC:
+        try:
+            out = _wx_reports()
+        except sqlite3.OperationalError as e:
+            out = {"reports": [], "metars": [], "checked": None,
+                   "error": f"MODE-S Wind has no pilot reports in its database yet ({e})"}
+        except Exception as e:
+            out = {"reports": [], "metars": [], "checked": None, "error": str(e)}
+        _reports_cache.update(t=now, out=out)
+    return _json_response(_reports_cache["out"])
+
+
 @app.route("/api/efhk_traffic")
 def api_efhk_traffic():
     """EFHK landings / departures of the last 1-24 h, newest first (?kind=arr|dep|both&hours=1|3|6|12|24)."""
@@ -1166,24 +1209,102 @@ def api_replay_range():
                     "days_kept": config.REPLAY_DAYS, "range_nm": config.REPLAY_RANGE_NM, "error": _replay.error})
 
 
+# Replay for everyone: a finished past chunk never changes, so the gzip bytes are kept (many viewers
+# watching the same go-around cost one read), and one address may ask at most REPLAY_REQ_PER_MIN.
+REPLAY_REQ_PER_MIN = 240
+_replay_lru = {}            # (t0, min, step) -> gzip / raw bytes
+_replay_lru_order = []
+_replay_hits = {}           # ip -> [minute, count]
+_replay_lock = threading.Lock()
+
+
+def _replay_limited():
+    ip = request.headers.get("X-Real-IP") or request.headers.get("X-Forwarded-For", "").split(",")[0].strip() or request.remote_addr
+    m = int(time.time() // 60)
+    with _replay_lock:
+        h = _replay_hits.get(ip)
+        if not h or h[0] != m:
+            if len(_replay_hits) > 5000:
+                _replay_hits.clear()
+            h = _replay_hits[ip] = [m, 0]
+        h[1] += 1
+        return h[1] > REPLAY_REQ_PER_MIN
+
+
+def _with_decl(chunk):
+    """The magnetic declination at each aircraft (the extended label's magnetic track)."""
+    for a in chunk["ac"].values():
+        p = next((x for x in a["s"] if x[1] is not None), None)
+        if p:
+            try:
+                a["decl"] = round(_ehs.decl.at(p[1], p[2]), 1)
+            except Exception:
+                pass
+    return chunk
+
+
 @app.route("/api/replay/chunk")
 def api_replay_chunk():
     """All recorded aircraft for 1-10 minutes from ?t=<epoch>, every ?step=1|2|5|10 seconds (the replay)."""
     try:
         t = float(request.args.get("t", ""))
-    except ValueError:
-        abort(400)
-    try:
-        minutes = int(request.args.get("min", "1"))
+        minutes = max(1, min(10, int(request.args.get("min", "1"))))
         step = int(request.args.get("step", "1"))
     except ValueError:
         abort(400)
     if step not in (1, 2, 5, 10):
         abort(400)
-    r = _json_response(_replay.chunk(t, minutes, step))
-    if t + max(1, min(10, minutes)) * 60 < time.time() - 120:
-        r.headers["Cache-Control"] = "public, max-age=86400"      # a finished past minute never changes
+    if _replay_limited():
+        return jsonify({"error": "too many requests - wait a minute"}), 429
+    t0 = int(t // 60) * 60
+    finished = t0 + minutes * 60 < time.time() - 120
+    gz = "gzip" in (request.headers.get("Accept-Encoding") or "")
+    key = (t0, minutes, step)
+    body = _replay_lru.get(key) if finished else None
+    if body is None:
+        raw = json.dumps(_with_decl(_replay.chunk(t0, minutes, step)), separators=(",", ":")).encode()
+        body = (gzip.compress(raw, 5), raw)
+        if finished:
+            with _replay_lock:
+                _replay_lru[key] = body
+                _replay_lru_order.append(key)
+                while len(_replay_lru_order) > 80:
+                    _replay_lru.pop(_replay_lru_order.pop(0), None)
+    resp = Response(body[0] if gz else body[1], mimetype="application/json")
+    if gz:
+        resp.headers["Content-Encoding"] = "gzip"
+    resp.headers["Vary"] = "Accept-Encoding"
+    resp.headers["Cache-Control"] = "public, max-age=86400" if finished else "no-store"
+    return resp
+
+
+@app.route("/api/replay/track/<icao>")
+def api_replay_track(icao):
+    """The history line of one aircraft in the replay: its flight around ?t= from the recording."""
+    if not re.fullmatch(r"[0-9A-Fa-f]{6}", icao or ""):
+        abort(400)
+    try:
+        t = float(request.args.get("t", ""))
+    except ValueError:
+        abort(400)
+    if _replay_limited():
+        return jsonify({"error": "too many requests - wait a minute"}), 429
+    r = _json_response(_replay.track(icao, t))
+    if t + 3600 < time.time() - 120:
+        r.headers["Cache-Control"] = "public, max-age=3600"
     return r
+
+
+@app.route("/api/replay/events")
+def api_replay_events():
+    """The go-arounds, landings and departures recorded between ?t0= and ?t1= (at most 2 days)."""
+    try:
+        t0, t1 = float(request.args.get("t0", "")), float(request.args.get("t1", ""))
+    except ValueError:
+        abort(400)
+    if t1 < t0 or t1 - t0 > 2 * 86400:
+        abort(400)
+    return _json_response({"events": _replay.events_between(t0, t1)})
 
 
 @app.route("/api/track/<icao>")

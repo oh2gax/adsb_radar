@@ -44,9 +44,9 @@
     const rows = d.rows || [];
     if (!rows.length) { body.innerHTML = `<p class="wx-none">No ${what} in the last ${span}.</p>`; return; }
     const both = kind === 'both';
-    const cols = both ? 7 : 6;
+    const cols = (both ? 7 : 6) + (window.Replay ? 1 : 0);
     let html = '<table class="tr-table"><thead><tr><th>UTC</th>' + (both ? '<th>A/D</th>' : '') +
-               '<th>CALLSIGN</th><th>REG</th><th>TYPE</th><th>RWY</th><th></th></tr></thead><tbody>';
+               '<th>CALLSIGN</th><th>REG</th><th>TYPE</th><th>RWY</th><th></th>' + (window.Replay ? '<th></th>' : '') + '</tr></thead><tbody>';
     let prevDay = dayKey(d.now || Date.now() / 1000);
     for (const r of rows) {
       const day = dayKey(r.t);
@@ -57,7 +57,8 @@
       html += `<tr data-icao="${esc(r.icao)}" data-t="${r.t}" data-tag="${esc(tag)}"${key === selKey ? ' class="sel"' : ''} title="${esc(r.icao)}${r.ga ? ' · ' + r.ga + ' go-around' + (r.ga > 1 ? 's' : '') + ' before landing' : ''}${r.own ? ' · detected by the radar' : ''}">` +
               `<td>${hhmm(r.t)}</td>` + (both ? `<td>${r.kind === 'arr' ? 'ARR' : 'DEP'}</td>` : '') +
               `<td class="tr-cs">${esc(r.callsign || r.icao)}</td><td>${esc(r.reg || '')}</td><td>${esc(r.type || '')}</td>` +
-              `<td>${esc(r.rwy || '---')}</td><td class="tr-ga">${ga}</td></tr>`;
+              `<td>${esc(r.rwy || '---')}</td><td class="tr-ga">${ga}</td>` +
+              (window.Replay ? `<td class="tr-rp" data-kind="${r.kind}" title="Replay from ${r.kind === 'arr' ? '5' : '2'} min before">▶</td>` : '') + '</tr>';
     }
     body.innerHTML = html + '</tbody></table>';
     markLive();
@@ -83,6 +84,13 @@
     noteTimer = setTimeout(() => { count.textContent = count.dataset.keep; delete count.dataset.keep; }, 4000);
   }
   body.addEventListener('click', async e => {
+    const rp = e.target.closest('.tr-rp');
+    if (rp && window.Replay) {                         // ▶: replay that landing / departure
+      const tr = rp.closest('tr[data-icao]');
+      window.Replay.start(+tr.dataset.t - (rp.dataset.kind === 'arr' ? 300 : 120),
+                          { sel: tr.dataset.icao, center: [window.RADAR_CENTER.lat, window.RADAR_CENTER.lon], range: 20, play: true });
+      return;
+    }
     const tr = e.target.closest('tr[data-icao]');
     if (!tr || typeof window.radarShowTrack !== 'function') return;
     const key = tr.dataset.icao + '|' + tr.dataset.t;

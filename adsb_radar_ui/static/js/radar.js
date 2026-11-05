@@ -5,6 +5,9 @@ let DPR = window.devicePixelRatio || 1;
 const NBSP_GLOBAL = '\u00A0';
 
 // --- Theme handling ---
+// The scope's clock: the real time, or the replay time while a replay plays (replay.js sets window.Replay)
+function radarNow(){ return (window.Replay && window.Replay.active) ? window.Replay.nowMs() : Date.now(); }
+function replayActive(){ return !!(window.Replay && window.Replay.active); }
 let theme = localStorage.getItem('theme') || 'gray';
 function refreshColors(){
   const src = document.body || document.documentElement;
@@ -292,7 +295,10 @@ const HIST_GAP_SEC = 120;        // no positions for longer than this: that part
 let hist = null;                 // {hex, follow, live, tag, pts: [[t, lat, lon, alt], ...], seq}
 let histSeq = 0, histLastSel = null;
 async function histFetch(hex, q){
-  const r = await fetch(`/api/track/${encodeURIComponent(hex)}${q || ''}`, {cache: 'no-store'});
+  // in a replay: that flight from the replay recording, up to an hour past the replay time (drawn up to it)
+  const url = replayActive() ? `/api/replay/track/${encodeURIComponent(hex)}?t=${Math.round(radarNow() / 1000)}`
+                             : `/api/track/${encodeURIComponent(hex)}${q || ''}`;
+  const r = await fetch(url, {cache: replayActive() ? 'default' : 'no-store'});
   if(!r.ok) throw new Error('HTTP ' + r.status);
   return r.json();
 }
@@ -309,7 +315,7 @@ async function histStartLive(hex){
 }
 async function histPoll(){
   const h = hist;
-  if(!h || !h.live || document.hidden) return;
+  if(!h || !h.live || document.hidden || replayActive()) return;
   const last = h.pts.length ? h.pts[h.pts.length - 1][0] : 0;
   try{
     const d = await histFetch(h.hex, last ? `?since=${last}` : '');
@@ -358,18 +364,38 @@ window.radarShowTrack = async (hex, t, tag) => {
 };
 window.radarClearTrack = () => { if(tsUi) tsUi.select(null); classicSel = null; histClear(); };
 window.radarTrackShown = () => hist ? hist.hex : null;
+// ARS markers: a small open diamond at the reported position and the report in short
+// ("ARS MOD TURB FL080 06:12Z"); severe reports in red (not in the mono themes)
+function drawArsMarks(w, h, cx, cy, R, obst){
+  const k = R / rangeNm, mono = document.body.classList.contains('theme-full-el') || document.body.classList.contains('theme-full-el-yellow');
+  ctx.save();
+  ctx.font = '11px ui-monospace, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.lineWidth = 1.2;
+  for(const m of window.radarArsMarks){
+    const q = projectNm(m.lat, m.lon), x = cx + q.x * k, y = cy - q.y * k;
+    if(x < -20 || y < -20 || x > w + 20 || y > h + 20) continue;
+    const col = (m.sev && !mono) ? '#ff2d2d' : colors.text;
+    setStroke(col); setFill(col);
+    ctx.beginPath(); ctx.moveTo(x, y - 5); ctx.lineTo(x + 5, y); ctx.lineTo(x, y + 5); ctx.lineTo(x - 5, y); ctx.closePath(); ctx.stroke();
+    ctx.fillText(m.text, x + 8, y);
+    if(obst) obst.push({x: x - 6, y: y - 7, w: ctx.measureText(m.text).width + 16, h: 14});
+  }
+  ctx.restore();
+}
 function drawHistory(cx, cy, R, obst){
   const h = hist;
   if(!h || !h.pts.length) return;
+  const tEnd = replayActive() ? radarNow() / 1000 : Infinity;     // a replay: the line so far
   const k = R / rangeNm;
   const xy = p => { const q = projectNm(p[1], p[2]); return [cx + q.x * k, cy - q.y * k]; };
   const solid = new Path2D(), gaps = new Path2D();
   let prev = null, prevT = 0;
   for(const p of h.pts){
+    if(p[0] > tEnd) break;
     const [x, y] = xy(p);
     if(prev){ const path = (p[0] - prevT > HIST_GAP_SEC) ? gaps : solid; path.moveTo(prev[0], prev[1]); path.lineTo(x, y); }
     prev = [x, y]; prevT = p[0];
   }
+  if(!prev) return;                        // (a replay before the first point of the flight)
   // a live line ends at the symbol (the symbol moves every second, the stored points less often)
   const ac = h.live ? aircraft.get(h.hex) : null;
   if(ac && prev && Number.isFinite(ac.lat) && Number.isFinite(ac.lon)){
@@ -709,15 +735,36 @@ function setStatus(text, warn){
   statusEl.classList.toggle('warn', !!warn);
 }
 async function fetchData(){
+  if(replayActive()) return;                // the replay feeds the scope (replay.js)
   try{
     const res = await fetch('/api/aircraft', {cache:'no-store'});
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const j = await res.json();
+    if(replayActive()) return;              // a replay started meanwhile: the scope shows the replay
     lastDataOkMs = Date.now();
     const arr = Array.isArray(j.aircraft) ? j.aircraft : [];
+    const count = ingestAircraft(arr, Date.now());
+    const upd = new Date().toISOString().slice(11,19) + 'Z';
+    if(j.feed_lost){
+      const age = Number.isFinite(j.feed_age) ? `no data for ${Math.round(j.feed_age)} s` : 'no data yet';
+      setStatus(`FEED LOST – ${age}${j.error ? ' (' + j.error + ')' : ''} | Checked: ${upd}`, true);
+    } else if(j.error){
+      setStatus(`Targets: ${count} | Updated: ${upd} | Feed problem: ${j.error}`, true);
+    } else {
+      setStatus(`Targets: ${count} | Updated: ${upd}`, false);
+    }
+  }catch(e){
+    if(replayActive()) return;
+    const down = Math.round((Date.now() - lastDataOkMs)/1000);
+    if(down > SERVER_LOST_SEC && aircraft.size){ aircraft = new Map(); acState.clear(); trails.clear(); trailLastSample.clear(); }
+    setStatus(`Radar server not reachable (${down} s)`, true);
+  }
+}
+// One update of the aircraft list (live: /api/aircraft every second; replay: replay.js), `now` in ms of
+// the scope's clock. Returns the number of aircraft.
+function ingestAircraft(arr, now){
     let count = 0;
     const next = new Map();
-    const now = Date.now();
     for(const raw of arr){
       const ac = normalizeAircraft(raw);
       if(!ac.hex) continue;
@@ -751,21 +798,10 @@ async function fetchData(){
     requestDraw(); _trafficBuildTs = 0;     // new data: redraw and rebuild the traffic list
     if(tsUi) tsUi.forget(new Set(next.keys()));
     if(classicSel && !next.has(classicSel)) classicSel = null;
-    const upd = new Date().toISOString().slice(11,19) + 'Z';
-    if(j.feed_lost){
-      const age = Number.isFinite(j.feed_age) ? `no data for ${Math.round(j.feed_age)} s` : 'no data yet';
-      setStatus(`FEED LOST – ${age}${j.error ? ' (' + j.error + ')' : ''} | Checked: ${upd}`, true);
-    } else if(j.error){
-      setStatus(`Targets: ${count} | Updated: ${upd} | Feed problem: ${j.error}`, true);
-    } else {
-      setStatus(`Targets: ${count} | Updated: ${upd}`, false);
-    }
-  }catch(e){
-    const down = Math.round((Date.now() - lastDataOkMs)/1000);
-    if(down > SERVER_LOST_SEC && aircraft.size){ aircraft = new Map(); acState.clear(); trails.clear(); trailLastSample.clear(); }
-    setStatus(`Radar server not reachable (${down} s)`, true);
-  }
+    return count;
 }
+// forget what depends on the time (a jump in the replay, or back to live)
+function resetTimeState(){ acState.clear(); trails.clear(); trailLastSample.clear(); requestDraw(); }
 const DATA_POLL_MS = 1000;                // the server reads the feed every second too (POLL_SECONDS)
 setInterval(fetchData, DATA_POLL_MS); fetchData();
 
@@ -819,7 +855,7 @@ function normalizeAircraft(a){
   const sel_alt_ft = (a.sel_alt_ft!==undefined && a.sel_alt_ft!==null && !Number.isNaN(Number(a.sel_alt_ft))) ? Number(a.sel_alt_ft) : null;
   const sel_alt_hundreds = (a.sel_alt_hundreds!==undefined && a.sel_alt_hundreds!==null && !Number.isNaN(Number(a.sel_alt_hundreds))) ? Number(a.sel_alt_hundreds) : null;
   // go-around mark from the server (movements.py): the time it was detected, in this browser's clock
-  const gaStart = (a.ga && Number.isFinite(Number(a.ga.age))) ? Date.now() - Number(a.ga.age) * 1000 : null;
+  const gaStart = (a.ga && Number.isFinite(Number(a.ga.age))) ? radarNow() - Number(a.ga.age) * 1000 : null;
   return {hex, callsign, lat, lon, alt, hdg, gs, vr, squawk, reg, type, sel_alt_ft, sel_alt_hundreds, gaStart};
 }
 // The GA mark after the callsign: flashing for the first 60 s, then steady (until the landing)
@@ -1222,12 +1258,14 @@ function drawScope(){
   }
   const ranges = icaoRanges;
   const posList = [];
-  const now = Date.now();
+  const now = radarNow();           // the scope's clock (replay time in a replay)
   const clTargets = [];
 
   // the history line of the selected aircraft, under the symbols
   histSync();
   if(showHistory) drawHistory(cx, cy, R, ts ? tsObst : null);
+  // pilot reports (ARS) with a position, when "ARS on scope" is on (reports.js)
+  if(window.radarArsMarks && window.radarArsMarks.length) drawArsMarks(w, h, cx, cy, R, ts ? tsObst : null);
 
   // Draw aircraft with position
   for(const ac of aircraft.values()){
@@ -1254,7 +1292,7 @@ function drawScope(){
     // Trails (3x3 squares behind target; skip last sample so trail starts behind symbol)
     // Stored as lat/lon so they stay correct after zoom, center change or window resize.
     if(showTrail){
-      const nowMs = Date.now();
+      const nowMs = radarNow();
       const last = trailLastSample.get(ac.hex) || 0;
       if(nowMs - last >= 5000){
         const arr = trails.get(ac.hex) || [];
@@ -1284,7 +1322,7 @@ function drawScope(){
 
     // Symbol (unfilled square)
     ctx.save(); ctx.translate(px, py); setStroke(colors.symbol); ctx.lineWidth=1.5; ctx.strokeRect(-5,-5,10,10); ctx.restore();
-    if(ac.hex === flashHex && now < flashUntil && Math.floor(now / 400) % 2 === 0){
+    if(ac.hex === flashHex && Date.now() < flashUntil && Math.floor(Date.now() / 400) % 2 === 0){
       setStroke(colors.symbol); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(px, py, 13, 0, Math.PI*2); ctx.stroke();
     }
 
@@ -1311,7 +1349,7 @@ function drawScope(){
       // TopSky label: collected here, placed and drawn after all symbols (topsky.js)
       const isSel = tsUi.selected() === ac.hex, ext = isSel || tsUi.hover() === ac.hex;
       const lines = ext
-        ? Topsky.extLines(ac, tsUi.data(ac.hex), {cs: label, lvl3: tsLvl3, center: [center.lat, center.lon]})
+        ? Topsky.extLines(ac, replayActive() ? window.Replay.acData(ac.hex) : tsUi.data(ac.hex), {cs: label, lvl3: tsLvl3, center: [center.lat, center.lon]})
         : Topsky.labelLines(ac, label, tsLvl3);
       const sq = ac.squawk ? String(ac.squawk).trim() : '';
       tsItems.push({key: ac.hex, p: {x: px, y: py}, lines, sel: isSel, ext,
@@ -1504,7 +1542,7 @@ const lis = rows.slice(0, 80).map(function(item){
 
 // Clock + loop
 function fmtClock(){
-  const d=new Date(); const hh=String(d.getUTCHours()).padStart(2,'0'); const mm=String(d.getUTCMinutes()).padStart(2,'0'); const ss=String(d.getUTCSeconds()).padStart(2,'0');
+  const d=new Date(radarNow()); const hh=String(d.getUTCHours()).padStart(2,'0'); const mm=String(d.getUTCMinutes()).padStart(2,'0'); const ss=String(d.getUTCSeconds()).padStart(2,'0');
   if(utcClockEl) utcClockEl.textContent = `${hh}:${mm}:${ss}`;
 }
 setInterval(fmtClock, 250); fmtClock();

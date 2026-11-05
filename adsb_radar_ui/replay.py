@@ -352,7 +352,83 @@ class ReplayRecorder:
                 a["s"] += [[minute + r[0]] + r[1:] for r in d["s"] if r[0] % step == 0 or step == 1]
                 a["id"] += [[minute + r[0]] + r[1:] for r in d["id"]]
                 a["cb"] += [[minute + r[0], r[1]] for r in d["cb"]]
+        if not metars:
+            m = self.metar_at(m0 + minutes * 60)
+            metars = [m] if m else []
         return {"t0": m0, "minutes": minutes, "step": step, "ac": ac, "events": events, "metar": metars[:1]}
+
+    def _days_between(self, t0, t1):
+        d, out = int(t0 // 86400) * 86400, []
+        while d <= t1:
+            out.append(_day(d)); d += 86400
+        return out
+
+    def track(self, icao, t, before=3 * 3600, after=3600, gap=20 * 60, max_points=4000):
+        """The flight of `icao` around time t from the recording: [[t, lat, lon, alt, src]], from at most
+        `before` s earlier (split at gaps longer than `gap`: the part that contains t, or the last one
+        before it) to `after` s later (the replay draws the line up to its time)."""
+        icao = (icao or "").upper()
+        m0, m1 = int((t - before) // 60) * 60, int((t + after) // 60) * 60
+        pts = []
+        for day in self._days_between(m0, m1):
+            c = self._ro(day)
+            if c is None:
+                continue
+            try:
+                rows = c.execute("SELECT minute, data FROM blocks WHERE minute >= ? AND minute <= ? AND icao = ? ORDER BY minute",
+                                 (m0, m1, icao)).fetchall()
+            finally:
+                c.close()
+            for minute, blob in rows:
+                for r in decode_block(blob)["s"]:
+                    if r[1] is not None and r[2] is not None:
+                        pts.append([minute + r[0], r[1], r[2], r[3], r[7]])
+        if not pts:
+            return {"icao": icao, "points": [], "live": True}
+        # the part of the flight around t
+        segs, cur = [], [pts[0]]
+        for p in pts[1:]:
+            if p[0] - cur[-1][0] > gap:
+                segs.append(cur); cur = []
+            cur.append(p)
+        segs.append(cur)
+        pick = None
+        for sg in segs:
+            if sg[0][0] <= t + 5:
+                pick = sg
+        pick = pick or segs[0]
+        if len(pick) > max_points:
+            step = -(-len(pick) // max_points)
+            pick = pick[::step] + [pick[-1]]
+        return {"icao": icao, "points": pick, "live": True, "until": m1 + 59}
+
+    def events_between(self, t0, t1):
+        """The go-arounds, landings and departures recorded between t0 and t1."""
+        out = []
+        for day in self._days_between(t0, t1):
+            c = self._ro(day)
+            if c is None:
+                continue
+            try:
+                out += [dict(zip(("t", "kind", "icao", "callsign", "rwy", "ga", "low"), r)) for r in
+                        c.execute("SELECT * FROM events WHERE t >= ? AND t <= ? ORDER BY t", (t0, t1))]
+            finally:
+                c.close()
+        return out
+
+    def metar_at(self, t):
+        """The latest METAR recorded at or before t (looks back over the day files of the last 2 days)."""
+        for day in reversed(self._days_between(t - 2 * 86400, t)):
+            c = self._ro(day)
+            if c is None:
+                continue
+            try:
+                r = c.execute("SELECT t, station, text FROM metar WHERE t <= ? ORDER BY t DESC LIMIT 1", (t,)).fetchone()
+            finally:
+                c.close()
+            if r:
+                return {"t": r[0], "station": r[1], "text": r[2]}
+        return None
 
     def status(self):
         days = self.days_info()

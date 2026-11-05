@@ -160,7 +160,7 @@
         </div>
       </div>
       <div class="block">
-        <div class="label">METAR &amp; TAF</div>
+        <div class="label">METAR &amp; TAF <span id="wxSideDot" class="rp-dot" hidden title="A new pilot report near EFHK (METAR &amp; TAF window → REPORTS)"></span></div>
         <div class="controls" style="flex-wrap:wrap; gap:8px;">
           <label>ICAO <input id="wxIcaoInput" class="icao-input" type="text" maxlength="4" value="EFHK" spellcheck="false" autocomplete="off"></label>
           <button class="btn" id="applyWx">Apply</button>
@@ -171,6 +171,13 @@
         <div class="label">EFHK traffic</div>
         <div class="controls">
           <label title="Landings and departures at EFHK (from MODE-S Wind) in a window on the scope"><input type="checkbox" id="trOn"> Show arrivals &amp; departures</label>
+        </div>
+      </div>
+      <div class="block">
+        <div class="label">Replay</div>
+        <div class="controls">
+          <button class="btn" id="rpOpen" title="Play back any moment of the last 30 days: the replay bar on the scope">Replay bar</button>
+          <span class="value small">the last 30 days, 1×–60×</span>
         </div>
       </div>
       <div class="block">

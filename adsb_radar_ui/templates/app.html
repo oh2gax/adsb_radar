@@ -84,6 +84,9 @@
 </section>
 
 <section id="vWx" class="app-page" hidden>
+  <div class="app-pbar"><span class="app-seg" id="wxTabsM"><button type="button" data-wxtab="wx">METAR &amp; TAF</button><button type="button" data-wxtab="rep">REPORTS <span id="wxRepNM"></span><span id="wxRepDotM" class="rp-dot" hidden></span></button></span></div>
+  <div id="wxRepBarM" class="app-pbar rp-bar" hidden></div>
+  <div id="wxRepListM" class="app-pbody rp-list app-rep" hidden></div>
   <div class="app-pbar app-wx-bar">
     <span class="app-chips" id="wxChips"></span>
     <form id="wxForm" class="app-wx-form" autocomplete="off"><input id="wxIcao" maxlength="4" placeholder="ICAO" aria-label="Airport ICAO code" autocapitalize="characters"><button type="submit">Show</button></form>
@@ -106,7 +109,7 @@
   <div class="app-tiles" role="group" aria-label="View">
     <button type="button" class="app-tile" data-view="radar"><b>Radar</b><small>live scope</small></button>
     <button type="button" class="app-tile" data-view="traffic"><b>EFHK traffic</b><small>arrivals · departures</small></button>
-    <button type="button" class="app-tile" data-view="wx"><b>METAR &amp; TAF</b><small>EFHK · any airport</small></button>
+    <button type="button" class="app-tile" data-view="wx"><b>METAR &amp; TAF <span id="appWxDot" class="rp-dot" hidden></span></b><small>EFHK · reports</small></button>
     <a class="app-tile" href="/"><b>Full version</b><small>the desktop page</small></a>
   </div>
 
@@ -193,6 +196,7 @@
 
 <script src="/static/js/topsky.js?v={{ asset_tag }}"></script>
 <script src="/static/js/radar.js?v={{ asset_tag }}"></script>
+<script src="/static/js/reports.js?v={{ asset_tag }}"></script>
 <script src="/static/js/app.js?v={{ asset_tag }}"></script>
 </body>
 </html>

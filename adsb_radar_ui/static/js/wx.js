@@ -5,6 +5,9 @@
  * lower-right corner (atcwin.js). Position, size, airport and on/off are remembered.
  * The reports come from the same NOAA source as MODE-S Wind (the server fetches them at
  * most every 10 minutes); the window asks again every 2 minutes while it is open.
+ * Tab REPORTS: the pilot reports (ARS / WXREP / SIGMET) and the METARs with a windshear group of the
+ * last 12 / 24 h from MODE-S Wind (reports.js); a red dot on the tab and in the sidebar marks a new
+ * report near EFHK.
  */
 (function () {
   const win = document.getElementById('wxWindow');
@@ -45,6 +48,7 @@
   }
 
   function render(d) {
+    if (typeof tab !== 'undefined' && tab === 'rep') return;
     title.textContent = `METAR & TAF · ${d.icao || icao}`;
     if (d.error) { body.innerHTML = `<p class="wx-none">${esc(d.error)}</p>`; return; }
     const sec = (name, text, time, err, oldMin) =>
@@ -70,11 +74,49 @@
   // position and size: shared ATC window behaviour (atcwin.js); default top right of the scope
   const aw = AtcWindow.make(win, { key: 'wxGeom', head });
 
+  // ---- tabs: METAR & TAF / REPORTS ----
+  const repEl = document.getElementById('wxRep');
+  const repBar = document.getElementById('wxRepBar'), repList = document.getElementById('wxRepList'), repFoot = document.getElementById('wxRepFoot');
+  const repDot = document.getElementById('wxRepDot'), sideDot = document.getElementById('wxSideDot'), repN = document.getElementById('wxRepN');
+  const R = typeof WxReports !== 'undefined' ? WxReports : null;
+  let tab = ls('wxTab') === 'rep' && R ? 'rep' : 'wx';
+  function showTab(t) {
+    tab = t; ls('wxTab', t);
+    win.querySelectorAll('[data-wxtab]').forEach(b => b.classList.toggle('on', b.dataset.wxtab === t));
+    body.hidden = t !== 'wx';
+    if (repEl) repEl.hidden = t !== 'rep';
+    if (t === 'rep') { title.textContent = 'METAR & TAF · REPORTS'; if (R) { R.load(); renderRep(); } }
+    else if (last) render(last); else title.textContent = `METAR & TAF · ${icao}`;
+  }
+  function renderRep() {
+    if (!R) return;
+    const list = R.filtered();
+    if (repN) repN.textContent = `(${list.length})`;
+    const dot = R.hasNew();
+    if (sideDot) sideDot.hidden = !dot;
+    if (repDot) repDot.hidden = !dot;
+    if (tab !== 'rep' || !on || !repEl) return;
+    repBar.innerHTML = R.barHtml();
+    repList.innerHTML = R.html(list);
+    repFoot.innerHTML = R.footer();
+    R.markSeen();                                   // shown: no longer new
+  }
+  if (R) {
+    R.bindBar(repBar);
+    R.onChange(renderRep);
+    win.querySelectorAll('[data-wxtab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.wxtab)));
+  } else {
+    const tabs = win.querySelector('.wx-tabs'); if (tabs) tabs.hidden = true;
+  }
+
   // ---- on / off and the airport ----
   function setOn(v) {
     on = v; cb.checked = v; ls('wxOn', v ? '1' : '0');
     clearInterval(timer); timer = null;
-    if (v) { aw.show(); load(); timer = setInterval(() => { if (!document.hidden) load(); }, 120000); }
+    if (v) {
+      aw.show(); load(); showTab(tab);
+      timer = setInterval(() => { if (!document.hidden) { load(); if (tab === 'rep' && R) R.load(); } }, 120000);
+    }
     else aw.hide();
   }
   function apply() {

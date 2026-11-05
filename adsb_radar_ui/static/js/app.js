@@ -94,7 +94,7 @@
     for (const [k, id] of Object.entries(VIEWS)) if (id) $(id).hidden = k !== v;
     document.querySelectorAll('.app-tile[data-view]').forEach(t => t.classList.toggle('on', t.dataset.view === v));
     if (v === 'traffic') trLoad();
-    if (v === 'wx') wxLoad();
+    if (v === 'wx') { wxLoad(); wxShowTab(wxTab); }
     if (v === 'news') newsLoad();
     updateBar();
     requestDraw();
@@ -112,7 +112,10 @@
       title.textContent = 'RADAR';
       sub.textContent = `${fmtRange(rangeNm)} NM · ${n} target${n === 1 ? '' : 's'}`;
     } else if (view === 'traffic') { title.textContent = 'EFHK TRAFFIC'; sub.textContent = trSub; }
-    else if (view === 'wx') { title.textContent = 'METAR & TAF'; sub.textContent = `${wxIcao} · refreshed every 10 min`; }
+    else if (view === 'wx') {
+      title.textContent = 'METAR & TAF';
+      sub.textContent = wxTab === 'rep' && R ? `Reports · last ${R.opt.hours} h · ${R.count()} message${R.count() === 1 ? '' : 's'}` : `${wxIcao} · refreshed every 10 min`;
+    }
     else { title.textContent = "WHAT'S NEW"; sub.textContent = `RADAR ${window.RADAR_VERSION || ''}`; }
     const st = $('status'), feed = $('appFeed');
     const bad = !!(st && st.classList.contains('warn'));
@@ -352,9 +355,41 @@
     $('wxBodyM').textContent = 'Loading…'; wxLoad();
   });
 
+  // ---- METAR & TAF page: tab REPORTS (pilot reports from MODE-S Wind, reports.js) ----
+  const R = typeof WxReports !== 'undefined' ? WxReports : null;
+  let wxTab = ls('wxTab') === 'rep' && R ? 'rep' : 'wx';
+  function wxShowTab(t) {
+    wxTab = t; ls('wxTab', t);
+    document.querySelectorAll('#wxTabsM button').forEach(b => b.classList.toggle('on', b.dataset.wxtab === t));
+    const rep = t === 'rep';
+    document.querySelector('#vWx .app-wx-bar').hidden = rep; $('wxBodyM').hidden = rep;
+    $('wxRepBarM').hidden = !rep; $('wxRepListM').hidden = !rep;
+    if (rep && R) { R.load(); renderRepM(); }
+    updateBar();
+  }
+  function renderRepM() {
+    if (!R) return;
+    const list = R.filtered(), dot = R.hasNew();
+    $('wxRepNM').textContent = `(${list.length})`;
+    $('wxRepDotM').hidden = !dot; $('appWxDot').hidden = !dot;
+    menuDot();
+    if (view !== 'wx' || wxTab !== 'rep') return;
+    $('wxRepBarM').innerHTML = R.barHtml();
+    $('wxRepListM').innerHTML = R.html(list) + `<div class="rp-foot">${R.footer()}</div>`;
+    R.markSeen();
+  }
+  if (R) {
+    R.bindBar($('wxRepBarM'));
+    R.onChange(renderRepM);
+    document.querySelectorAll('#wxTabsM button').forEach(b => b.addEventListener('click', () => wxShowTab(b.dataset.wxtab)));
+  } else $('wxTabsM').hidden = true;
+
   // ---- What's new (/api/whatsnew; the dot marks a version not opened in the app yet) ----
   const ver = window.RADAR_VERSION || '';
-  if (ver && ls('seenVersion') !== ver) { $('appNewsDot').hidden = false; $('appMenuDot').hidden = false; }
+  // the ☰ dot: an unread What's new or a new pilot report near EFHK
+  function menuDot() { $('appMenuDot').hidden = $('appNewsDot').hidden && (!R || !R.hasNew()); }
+  if (ver && ls('seenVersion') !== ver) { $('appNewsDot').hidden = false; }
+  menuDot();
   const inline = t => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<i>$2</i>');
   function mdLines(lines) {
     let html = '', depth = 0, para = [];
@@ -371,7 +406,7 @@
   }
   let newsLoaded = false;
   async function newsLoad() {
-    ls('seenVersion', ver); $('appNewsDot').hidden = true; $('appMenuDot').hidden = true;
+    ls('seenVersion', ver); $('appNewsDot').hidden = true; menuDot();
     if (newsLoaded) return;
     try {
       const d = await (await fetch('/api/whatsnew', { cache: 'no-store' })).json();

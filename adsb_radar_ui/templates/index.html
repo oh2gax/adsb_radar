@@ -18,7 +18,13 @@
       </div>
       <div id="wxWindow" class="atc-window wx-window scope-obst" role="dialog" aria-label="METAR and TAF" hidden>
         <div class="wn-head wx-head" title="Drag to move; resize from the lower-right corner"><span id="wxTitle">METAR &amp; TAF</span><button id="wxClose" class="wn-close" type="button" title="Close">&times;</button></div>
+        <div class="wx-tabs"><button type="button" data-wxtab="wx">METAR &amp; TAF</button><button type="button" data-wxtab="rep">REPORTS <span id="wxRepN"></span><span id="wxRepDot" class="rp-dot" hidden></span></button></div>
         <div id="wxBody" class="wn-body">Loading…</div>
+        <div id="wxRep" class="wn-body wx-rep" hidden>
+          <div id="wxRepBar" class="rp-bar"></div>
+          <div id="wxRepList" class="rp-list"></div>
+          <div id="wxRepFoot" class="rp-foot"></div>
+        </div>
       </div>
       <div id="trWindow" class="atc-window tr-window scope-obst" role="dialog" aria-label="EFHK traffic" hidden>
         <div class="wn-head tr-head" title="Drag to move; resize from the lower-right corner"><span>EFHK TRAFFIC</span><button id="trClose" class="wn-close" type="button" title="Close">&times;</button></div>
@@ -42,8 +48,10 @@
   </script>
   <script src="/static/js/topsky.js?v={{ asset_tag }}"></script>
   <script src="/static/js/radar.js?v={{ asset_tag }}"></script>
+  <script src="/static/js/replay.js?v={{ asset_tag }}"></script>
   <script src="/static/js/whatsnew.js?v={{ asset_tag }}"></script>
   <script src="/static/js/atcwin.js?v={{ asset_tag }}"></script>
+  <script src="/static/js/reports.js?v={{ asset_tag }}"></script>
   <script src="/static/js/wx.js?v={{ asset_tag }}"></script>
   <script src="/static/js/traffic.js?v={{ asset_tag }}"></script>
 </body>

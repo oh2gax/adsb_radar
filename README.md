@@ -26,7 +26,11 @@ top-left logo; nothing has to be edited by hand.
 - **What's new** link under the logo: the notes of the ten newest versions in a window over
   the scope (`doc/whats_new.md`)
 - **Own position**: a small triangle at a position entered in decimal degrees
-- **METAR & TAF** window for any airport (EFHK by default): movable, resizable, remembered
+- **METAR & TAF** window for any airport (EFHK by default): movable, resizable, remembered; a
+  **Reports** tab with MODE-S Wind's pilot reports, WXREPs, SIGMETs / AIRMETs and windshear METARs
+  (12 / 24 h, a new-report dot, ARS / AIREP positions on the scope; `static/js/reports.js`)
+- **Replay** of the last 30 days (desktop): play / pause, 1×–60×, jumps, UTC time entry, day
+  chooser, a slider with the go-arounds, share links, ▶ in the EFHK traffic window (`static/js/replay.js`)
 - **EFHK traffic** window: landings and departures (ARR / DEP / BOTH, 1 h – 1 d) with runway and
   go-arounds, read from MODE-S Wind's database and completed with the radar's own detection;
   click a row to draw that flight's track
@@ -147,8 +151,18 @@ EFHK movements and the METARs. One SQLite file per UTC day in `REPLAY_DIR`
 aircraft per minute: delta-coded integers, zlib-compressed (about 5 bytes per aircraft-second, 9 with
 Comm-B, in tests). The minute in memory is written when it ends; older days than `REPLAY_DAYS` (30)
 are deleted hourly; writing pauses while the disk has less than `REPLAY_MIN_FREE_GB` (5) free.
-`/api/replay/range` and `/api/replay/chunk` read it; `/api/ehs_status` → `replay` shows the size,
-bytes per sample and errors. The replay screens come next (claude/design-replay.md in the project).
+`/api/ehs_status` → `replay` shows the size, bytes per sample and errors.
+
+The replay screen (`static/js/replay.js`, desktop): the bar and the banner are built by the script;
+it fetches 5-minute chunks (`/api/replay/chunk`, step 1–10 s by the speed, the next one in advance),
+interpolates the positions between samples and hands them to `radar.js` through `ingestAircraft()`
+— the same path as the live feed, so labels, trails, the GA mark and TopSky work unchanged.
+`radarNow()` is the replay clock while a replay runs (`window.Replay.active`); the live poll stops
+until *LIVE*. The history line comes from `/api/replay/track/<hex>?t=` and is drawn up to the
+replay time, the extended label from the chunk's Comm-B values, the QNH from the chunk's METAR.
+A link `/?replay=2026-11-05T14:40:00Z&speed=10&c=lat,lon&r=20&sel=hex` opens a replay. The
+replay endpoints are public and rate-limited per IP (`REPLAY_REQ_PER_MIN` 240); finished chunks are
+kept in memory (80) and cached by the browser for a day. The app has no replay screen yet.
 
 ## Mobile app (`/app`)
 
@@ -200,7 +214,10 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 | Endpoint | Returns |
 |---|---|
 | `/api/replay/range` | the replay recorder's days, first / last recorded second |
-| `/api/replay/chunk?t=&min=1..10&step=1\|2\|5\|10` | all recorded aircraft for 1–10 minutes from `t` (samples, labels, Comm-B, events, METAR) |
+| `/api/replay/chunk?t=&min=1..10&step=1\|2\|5\|10` | all recorded aircraft for 1–10 minutes from `t` (samples, labels, Comm-B with `decl`, events, METAR) |
+| `/api/replay/track/<hex>?t=` | recorded history line around time `t` (3 h before, 1 h after) |
+| `/api/replay/events?t0=&t1=` | recorded go-arounds, landings and departures (at most 2 days) |
+| `/api/wx/reports` | MODE-S Wind's pilot reports (24 h) and METARs with windshear, cached 60 s |
 | `/app`, `/app.webmanifest` | the mobile app and its web-app manifest |
 | `/api/aircraft` | targets, `feed_age`, `error`, `feed_lost`, `version` |
 | `/api/navaids?clat=&clon=&nmr=` | airports / navaids / waypoints within `nmr` NM |

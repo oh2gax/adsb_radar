@@ -288,3 +288,61 @@ body .stage .overlayBtns .btn { width: 30px; height: 30px; padding: 0; font-size
   color: var(--radar-text); border: 1px solid var(--radar-text); border-radius: 4px; opacity: 0.45; cursor: pointer; }
 body .stage .overlayBtns .btn:hover { opacity: 1; filter: none; }
 
+
+/* METAR & TAF window: tabs METAR & TAF / REPORTS (pilot reports, reports.js) */
+.wx-window .wx-tabs { display: flex; padding: 6px 10px 0; flex: none; }
+.wx-window .wx-tabs button { font: inherit; font-size: 11px; background: transparent; color: var(--radar-text); border: 1px solid var(--radar-text);
+  margin-left: -1px; padding: 2px 9px; cursor: pointer; position: relative; }
+.wx-window .wx-tabs button.on { background: var(--radar-text); color: var(--radar-bg); }
+.wx-window .wx-rep { padding-top: 6px; }
+.rp-bar { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin-bottom: 6px; font-size: 11px; }
+.rp-seg { display: inline-flex; }
+.rp-seg button { font: inherit; font-size: 11px; background: transparent; color: var(--radar-text); border: 1px solid var(--radar-text); margin-left: -1px; padding: 2px 7px; cursor: pointer; }
+.rp-seg button.on { background: var(--radar-text); color: var(--radar-bg); }
+.rp-chk { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+.rp-chk input { position: absolute; opacity: 0; pointer-events: none; }
+.rp-chk i { width: 9px; height: 9px; border: 1px solid var(--radar-text); display: inline-block; }
+.rp-chk input:checked + i { background: var(--radar-text); }
+.rp-list { line-height: 1.35; }
+.rp-it { border-top: 1px dotted var(--radar-ring); padding: 5px 0 6px; }
+.rp-h { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
+.rp-h .rp-t { font-weight: 700; } .rp-h .rp-k { font-weight: 700; min-width: 52px; }
+.rp-near { border: 1px solid var(--radar-text); padding: 0 4px; font-size: 10px; }
+.rp-raw { margin-top: 2px; opacity: 0.92; white-space: pre-wrap; word-break: break-word; }
+.rp-raw b { font-weight: 700; }
+.rp-sev { color: #ff2d2d; font-weight: 700; }
+body.theme-full-el .rp-sev, body.theme-full-el-yellow .rp-sev { color: inherit; text-decoration: underline; }
+.rp-day { text-align: center; opacity: 0.75; padding: 5px 0 2px; }
+.rp-none { opacity: 0.75; margin: 4px 0; }
+.rp-foot { margin-top: 8px; font-size: 10.5px; opacity: 0.75; }
+.rp-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ff2d2d; margin-left: 4px; vertical-align: 2px; }
+.rp-dot[hidden] { display: none; }
+
+/* Replay (replay.js): the bar at the bottom of the scope and the banner at the top */
+.rp-window { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 30; width: min(880px, calc(100% - 120px));
+  box-sizing: border-box; background: var(--radar-bg); color: var(--radar-text); border: 1px solid var(--radar-text);
+  font: 12px ui-monospace, "DejaVu Sans Mono", monospace; padding: 8px 10px 6px; }
+.rp-window[hidden] { display: none; }
+.rp-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.rp-row + .rp-row { margin-top: 7px; }
+.rp-b { font: inherit; background: transparent; color: var(--radar-text); border: 1px solid var(--radar-text); padding: 3px 7px; white-space: nowrap; cursor: pointer; }
+.rp-b.on { background: var(--radar-text); color: var(--radar-bg); }
+.rp-seg { display: inline-flex; } .rp-seg .rp-b { margin-left: -1px; }
+.rp-play { min-width: 34px; }
+.rp-fill { flex: 1; }
+.rp-info { opacity: 0.75; font-size: 11px; }
+.rp-time { font-size: 15px; font-weight: 700; letter-spacing: 1px; min-width: 96px; }
+.rp-window select { font: inherit; background: var(--radar-bg); color: var(--radar-text); border: 1px solid var(--radar-text); padding: 3px 4px; }
+.rp-form { display: inline-flex; gap: 5px; align-items: center; }
+.rp-form input { width: 64px; font: inherit; font-size: 13px; font-weight: 700; padding: 2px 5px; background: var(--radar-bg); color: var(--radar-text); border: 1px solid var(--radar-text); }
+.rp-form input.invalid { border-color: #ff2d2d; }
+.rp-slider { position: relative; flex: 1; padding: 11px 0 14px; }
+.rp-slider input[type=range] { width: 100%; margin: 0; accent-color: var(--radar-text); }
+.rp-marks span { position: absolute; top: 0; transform: translateX(-50%); font-size: 9px; font-weight: 700; }
+.rp-ticks span { position: absolute; bottom: 0; transform: translateX(-50%); font-size: 9px; opacity: 0.75; }
+.rp-note { min-height: 14px; font-size: 11px; opacity: 0.85; margin-top: 2px; word-break: break-all; }
+.rp-banner { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 30; background: var(--radar-text); color: var(--radar-bg);
+  font: 700 13px ui-monospace, monospace; letter-spacing: 2px; padding: 4px 12px; pointer-events: none; }
+.rp-banner[hidden] { display: none; }
+.tr-window .tr-table td.tr-rp { cursor: pointer; padding-left: 4px; }
+.tr-window .tr-table td.tr-rp:hover { text-decoration: none; font-weight: 700; }

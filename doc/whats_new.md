@@ -7,9 +7,19 @@ Format: a version starts with `## v.DDMMYYYY — title`; under it bullets (`- `,
 sub-bullets indented by two spaces) or plain paragraphs. **bold**, *italic* and
 `code` are shown as such.
 
-## v.05112026 — Replay recording starts
+## v.05112026 — Replay, pilot reports
 
-- **Replay is coming** — the radar now records everything it shows, every second, for the last **30 days**: every aircraft within 150 NM of EFHK with its labels and the extended label's values, the go-arounds, landings and departures, and the METARs. The replay controls on the scope (play back any moment, 1×–60×, jump to a UTC time, share a link) come in the next version; recording starts now so that there are days of traffic to play back.
+- **Replay** — play back any moment of the last **30 days**: the scope shows the traffic exactly as it was, every second, with the labels, the extended label's values, the GA alarm and the history line. Open it with **Replay → Replay bar** in the left panel.
+  - **▶** plays and pauses (also the space bar), **−10 min / −1 min / +1 min / +10 min** jump, and **1× 2× 5× 10× 30× 60×** set the speed. The banner at the top says *REPLAY*, the UTC time and the speed.
+  - Type a UTC time in the **UTC** box (`14:40`, `1440` or `14:40:30`) and press Enter or *Go*; choose the day from the list (days with no recording are greyed) or step with **◀ ▶**. The slider covers the whole UTC day; the go-arounds are marked on it with **GA**.
+  - **Link** copies a link to this moment, with the map's centre, range and the selected aircraft — anyone opening it sees the same replay. **● LIVE** returns to the live traffic; **✕** closes the bar.
+  - In the **EFHK traffic** window, **▶** at the end of a row replays that landing (from 5 minutes before) or departure (from 2 minutes before) with the aircraft selected.
+  - In a replay the QNH (Auto) is taken from the METAR of that time.
+- **Pilot reports** — the *METAR & TAF* window has a second tab, **Reports**: the pilot reports (ARS / AIREP), WXREPs, SIGMETs and AIRMETs, and the METARs with a windshear group, from the last **12 h** or **24 h**, newest first, as collected by MODE-S Wind. Choose which kinds to show and whether only those near EFHK. Severe (SEV) and heavy reports are in red.
+  - A dot on the tab (and on *METAR & TAF* in the left panel and the app's menu) tells that there is a new report near EFHK that you have not seen.
+  - **On scope** marks the reports that have a position (ARS / AIREP) on the scope with a small diamond, its phenomenon and level.
+  - The app has the same tabs on its *METAR & TAF* page.
+- **Recording** — the radar records everything it shows, every second, for 30 days: every aircraft within 150 NM of EFHK with its labels and the extended label's values, the go-arounds, landings and departures, and the METARs.
 - **Landings** — an aircraft passing over the runway higher up (above 1000 ft) is no longer counted as a landing in the EFHK traffic list.
 - **No more "None" labels** — an aircraft that sends no callsign is labelled with its ICAO24 code (as intended) instead of the word *None*.
 
