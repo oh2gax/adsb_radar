@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <!-- RADAR mobile app /app (from 2026-11-04): the scope full screen, every choice in the ☰ menu
        (static/js/app.js, static/css/app.css). The desktop sidebar is included hidden: radar.js reads
-       and drives its controls, the menu sets them. Settings are kept apart from the desktop page. -->
+       and drives its controls, the menu sets them. Settings are kept apart from the desktop page.
+       Replay (replay.js): the Replay tile opens the replay sheet at the bottom of the scope; /app?replay=… -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>RADAR</title>
   <meta name="theme-color" content="#cfcfcf">
@@ -108,9 +109,10 @@
   </div>
   <div class="app-tiles" role="group" aria-label="View">
     <button type="button" class="app-tile" data-view="radar"><b>Radar</b><small>live scope</small></button>
+    <button type="button" class="app-tile" id="appReplayTile"><b>Replay</b><small>the last 30 days</small></button>
     <button type="button" class="app-tile" data-view="traffic"><b>EFHK traffic</b><small>arrivals · departures</small></button>
     <button type="button" class="app-tile" data-view="wx"><b>METAR &amp; TAF <span id="appWxDot" class="rp-dot" hidden></span></b><small>EFHK · reports</small></button>
-    <a class="app-tile" href="/"><b>Full version</b><small>the desktop page</small></a>
+    <a class="app-tile app-tile2" href="/"><b>Full version</b><small>the desktop page</small></a>
   </div>
 
   <details class="app-sec" open>
@@ -202,6 +204,7 @@
 
 <script src="/static/js/topsky.js?v={{ asset_tag }}"></script>
 <script src="/static/js/radar.js?v={{ asset_tag }}"></script>
+<script src="/static/js/replay.js?v={{ asset_tag }}"></script>
 <script src="/static/js/reports.js?v={{ asset_tag }}"></script>
 <script src="/static/js/app.js?v={{ asset_tag }}"></script>
 </body>

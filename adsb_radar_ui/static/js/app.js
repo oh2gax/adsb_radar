@@ -7,6 +7,8 @@
  * Touch: one finger moves the map, two fingers pinch-zoom around the fingers, a tap selects an
  * aircraft (TopSky: its extended label stays open; both styles: its history line), a tap on empty
  * scope releases it. Views: Radar, EFHK traffic, METAR & TAF, What's new (full pages).
+ * Replay (replay.js): the Replay tile opens the replay sheet on the scope; the bar then says REPLAY with
+ * the replay time; ▶ on an EFHK traffic row replays that landing / departure.
  */
 (function () {
   'use strict';
@@ -75,7 +77,7 @@
   // ---- menu ----
   const drawer = $('appDrawer'), shade = $('appShade');
   function menu(open) {
-    if (open) syncMenu();
+    if (open) { syncMenu(); if (rpTile) rpTile.classList.toggle('on', !!(RP() && RP().isOpen)); }
     drawer.classList.toggle('open', open);
     drawer.setAttribute('aria-hidden', open ? 'false' : 'true');
     $('appMenuBtn').setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -100,29 +102,53 @@
     requestDraw();
   }
   document.querySelectorAll('.app-tile[data-view]').forEach(t => t.addEventListener('click', () => { show(t.dataset.view); menu(false); }));
+  // Replay: the sheet on the scope (a second tap on the tile closes it and goes back to live)
+  const RP = () => window.Replay || null;
+  const rpTile = $('appReplayTile');
+  if (rpTile) {
+    if (!RP()) rpTile.hidden = true;
+    rpTile.addEventListener('click', () => {
+      const r = RP(); if (!r) return;
+      menu(false);
+      if (view === 'radar' && r.isOpen) r.close(); else { show('radar'); r.open(); }
+    });
+  }
+  function replayFlight(icao, t, kind) {            // from 5 min before a landing, 2 min before a departure
+    const r = RP(); if (!r) return;
+    show('radar');
+    r.start(t - (kind === 'arr' ? 300 : 120), { sel: icao, center: [window.RADAR_CENTER.lat, window.RADAR_CENTER.lon], range: 20, play: true });
+  }
 
   // ---- the bar: title, range and targets, UTC, feed ----
   function updateBar() {
-    const d = new Date();
+    const rp = RP() && RP().active ? RP().state() : null;
+    const d = new Date(rp ? rp.t * 1000 : Date.now());    // a replay: its time
     $('appUtc').textContent = pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes());
     const title = $('appTitle'), sub = $('appSub');
     if (view === 'radar') {
       let n = 0;
       for (const a of aircraft.values()) if (Number.isFinite(a.lat) && Number.isFinite(a.lon)) n++;
-      title.textContent = 'RADAR';
-      sub.textContent = `${fmtRange(rangeNm)} NM · ${n} target${n === 1 ? '' : 's'}`;
+      if (rp) {
+        title.textContent = 'REPLAY';
+        sub.textContent = `${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}. ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}Z · ` +
+                          `${rp.playing ? rp.speed + '×' : 'PAUSED'}`;
+      } else {
+        title.textContent = 'RADAR';
+        sub.textContent = `${fmtRange(rangeNm)} NM · ${n} target${n === 1 ? '' : 's'}`;
+      }
     } else if (view === 'traffic') { title.textContent = 'EFHK TRAFFIC'; sub.textContent = trSub; }
     else if (view === 'wx') {
       title.textContent = 'METAR & TAF';
       sub.textContent = wxTab === 'rep' && R ? `Reports · last ${R.opt.hours} h · ${R.count()} message${R.count() === 1 ? '' : 's'}` : `${wxIcao} · refreshed every 10 min`;
     }
     else { title.textContent = "WHAT'S NEW"; sub.textContent = `RADAR ${window.RADAR_VERSION || ''}`; }
+    document.body.classList.toggle('app-replay', !!rp && view === 'radar');     // the inverted bar (app.css)
     const st = $('status'), feed = $('appFeed');
     const bad = !!(st && st.classList.contains('warn'));
     feed.className = 'app-feed ' + (bad ? 'bad' : (typeof lastDataOkMs !== 'undefined' && Date.now() - lastDataOkMs < 10000 ? 'ok' : ''));
     feed.title = st ? st.textContent : '';
   }
-  setInterval(updateBar, 1000);
+  setInterval(updateBar, 250);
 
   // ---- theme button: steps through the themes ----
   const THEMES = [['gray', 'Gray (ATC)'], ['green', 'Green (EL)'], ['full-el', 'Full EL (mono)'], ['full-el-yellow', 'Full EL (yellow)']];
@@ -265,7 +291,7 @@
   }
   function trRender(d) {
     const span = trHours === 24 ? '1 d' : trHours + ' h';
-    trSub = `last ${span} · tap: its track`;
+    trSub = RP() ? `last ${span} · ▶ = replay` : `last ${span} · tap: its track`;
     const what = trKind === 'arr' ? 'arrivals' : trKind === 'dep' ? 'departures' : 'traffic';
     $('trCountM').textContent = d.error ? '' : (trKind === 'both' ? `${d.arr} arr · ${d.dep} dep` : `${trKind === 'arr' ? d.arr : d.dep} ${what}`) +
       ` · last ${span}` + (d.note ? ' · radar only' : '');
@@ -273,19 +299,20 @@
     if (d.error) { body.innerHTML = `<p class="app-none">${esc(d.error)}</p>`; return; }
     const rows = d.rows || [];
     if (!rows.length) { body.innerHTML = `<p class="app-none">No ${what} in the last ${span}.</p>`; return; }
-    const both = trKind === 'both';
+    const both = trKind === 'both', rpOn = !!RP(), cols = (both ? 6 : 5) + (rpOn ? 1 : 0);
     let html = '<table class="app-tbl"><thead><tr><th>UTC</th>' + (both ? '<th>A/D</th>' : '') +
-               '<th>CALLSIGN</th><th>TYPE</th><th>RWY</th><th></th></tr></thead><tbody>';
+               '<th>CALLSIGN</th><th>TYPE</th><th>RWY</th><th></th>' + (rpOn ? '<th></th>' : '') + '</tr></thead><tbody>';
     let prev = dayKey(d.now || Date.now() / 1000);
     for (const r of rows) {
       const day = dayKey(r.t);
-      if (day !== prev) { const x = new Date(r.t * 1000); html += `<tr class="day"><td colspan="${both ? 6 : 5}">── ${pad(x.getUTCDate())}.${pad(x.getUTCMonth() + 1)}. ──</td></tr>`; prev = day; }
+      if (day !== prev) { const x = new Date(r.t * 1000); html += `<tr class="day"><td colspan="${cols}">── ${pad(x.getUTCDate())}.${pad(x.getUTCMonth() + 1)}. ──</td></tr>`; prev = day; }
       const ga = r.ga ? (r.ga > 1 ? 'GA' + r.ga : 'GA') : '';
       const tag = [r.callsign || r.icao, hhmm(r.t), r.kind === 'arr' ? 'ARR' : 'DEP', r.rwy || '', ga].filter(Boolean).join(' ');
       const live = window.radarHasAircraft(r.icao);
-      html += `<tr data-icao="${esc(r.icao)}" data-t="${r.t}" data-tag="${esc(tag)}"${live ? ' class="live"' : ''}>` +
+      html += `<tr data-icao="${esc(r.icao)}" data-t="${r.t}" data-kind="${r.kind}" data-tag="${esc(tag)}"${live ? ' class="live"' : ''}>` +
               `<td>${hhmm(r.t)}</td>` + (both ? `<td>${r.kind === 'arr' ? 'ARR' : 'DEP'}</td>` : '') +
-              `<td class="cs">${esc(r.callsign || r.icao)}</td><td>${esc(r.type || '')}</td><td>${esc(r.rwy || '---')}</td><td class="ga">${ga}</td></tr>`;
+              `<td class="cs">${esc(r.callsign || r.icao)}</td><td>${esc(r.type || '')}</td><td>${esc(r.rwy || '---')}</td><td class="ga">${ga}</td>` +
+              (rpOn ? `<td class="app-trp" aria-label="Replay from ${r.kind === 'arr' ? '5' : '2'} min before">▶</td>` : '') + '</tr>';
     }
     body.innerHTML = html + '</tbody></table>';
   }
@@ -303,6 +330,8 @@
   $('trHours').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; trHours = +b.dataset.hours; ls('trHours', String(trHours)); $('trBodyM').textContent = 'Loading…'; trLoad(); });
   $('trBodyM').addEventListener('click', async e => {
     const tr = e.target.closest('tr[data-icao]'); if (!tr) return;
+    // ▶ (or any row during a replay): replay that landing / departure
+    if (e.target.closest('.app-trp') || (RP() && RP().active)) { replayFlight(tr.dataset.icao, +tr.dataset.t, tr.dataset.kind); return; }
     tr.classList.add('sel');
     const n = await window.radarShowTrack(tr.dataset.icao, +tr.dataset.t, tr.dataset.tag);
     tr.classList.remove('sel');

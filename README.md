@@ -30,8 +30,9 @@ top-left logo; nothing has to be edited by hand.
 - **METAR & TAF** window for any airport (EFHK by default): movable, resizable, remembered; a
   **Reports** tab with MODE-S Wind's pilot reports, WXREPs, SIGMETs / AIRMETs and windshear METARs
   (12 / 24 h, a new-report dot, ARS / AIREP positions on the scope; `static/js/reports.js`)
-- **Replay** of the last 30 days (desktop): play / pause, 1×–60×, jumps, UTC time entry, day
-  chooser, a slider with the go-arounds, share links, ▶ in the EFHK traffic window (`static/js/replay.js`)
+- **Replay** of the last 30 days: play / pause, 1×–60×, jumps, UTC time entry, day chooser, a slider
+  with the go-arounds, share links, ▶ in the EFHK traffic window (`static/js/replay.js`); in the app a
+  replay sheet (☰ → Replay), ▶ on the EFHK traffic page, `/app?replay=…` links
 - **EFHK traffic** window: landings and departures (ARR / DEP / BOTH, 1 h – 1 d) with runway and
   go-arounds, read from MODE-S Wind's database and completed with the radar's own detection;
   click a row to draw that flight's track

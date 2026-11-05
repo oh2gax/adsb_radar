@@ -12,10 +12,15 @@
  * 1440, 14:40:30), the speeds 1×–60×, and a 24-hour slider with the day's go-arounds. An inverted
  * banner at the top of the scope says REPLAY. A link /?replay=2026-11-04T15:33Z&speed=10&sel=461AAA
  * &c=60.32,24.96&r=20 opens that moment.
+ *
+ * The mobile app (/app, window.RADAR_APP) gets the same controls as a sheet at the bottom of the scope
+ * (bigger buttons, the phone's number keyboard for the UTC time, Share instead of Link); its top bar
+ * says REPLAY instead of a banner (app.js), and /app?replay=… opens a moment there.
  */
 (function () {
   'use strict';
-  const stage = document.querySelector('main.stage');
+  const stage = document.querySelector('main.stage, main.app-stage');
+  const APP = !!window.RADAR_APP;
   if (!stage || typeof ingestAircraft !== 'function') return;
   const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (_) { return null; } };
   const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -216,7 +221,7 @@
   }
 
   // ---- the bar and the banner ----
-  stage.insertAdjacentHTML('beforeend', `<div id="rpBanner" class="rp-banner" hidden></div>
+  const DESK_HTML = `<div id="rpBanner" class="rp-banner" hidden></div>
     <div id="rpBar" class="rp-window scope-obst" hidden>
       <div class="rp-row"><button type="button" class="rp-b" data-a="replay">▶ REPLAY</button><button type="button" class="rp-b" data-a="live">● LIVE</button>
         <button type="button" class="rp-b" data-a="dprev" title="The day before">◀</button><select id="rpDay" title="The day (UTC)"></select><button type="button" class="rp-b" data-a="dnext" title="The day after">▶</button>
@@ -231,25 +236,54 @@
       <div class="rp-row rp-slrow"><div class="rp-slider"><div id="rpMarks" class="rp-marks"></div>
         <input id="rpSlider" type="range" min="0" max="86399" step="1" value="0" aria-label="Time of the day (UTC)"><div class="rp-ticks">${[0, 3, 6, 9, 12, 15, 18, 21, 24].map(h => `<span style="left:${h / 24 * 100}%">${pad(h)}</span>`).join('')}</div></div></div>
       <div id="rpNote" class="rp-note"></div>
-    </div>`);
+    </div>`;
+  // the app: a sheet at the bottom of the scope, the same controls (ids / data-*) with bigger buttons
+  const APP_HTML = `<div id="rpBanner" class="rp-banner" hidden></div>
+    <div id="rpBar" class="rp-window app-rp scope-obst" hidden>
+      <div class="rp-row"><span id="rpTime" class="rp-time">LIVE</span><span class="rp-fill"></span>
+        <button type="button" class="rp-b" data-a="link" title="Share a link to this moment">Share</button><button type="button" class="rp-b" data-a="live">● LIVE</button><button type="button" class="rp-b" data-a="close" aria-label="Close (back to live)">✕</button></div>
+      <div class="rp-row"><button type="button" class="rp-b" data-a="dprev" aria-label="The day before">◀</button><select id="rpDay" aria-label="The day (UTC)"></select><button type="button" class="rp-b" data-a="dnext" aria-label="The day after">▶</button>
+        <span class="rp-fill"></span>
+        <form id="rpForm" class="rp-form" autocomplete="off"><label>UTC <input id="rpUtc" maxlength="8" inputmode="numeric" placeholder="1440" aria-label="Jump to a UTC time of the chosen day: 1440 or 144030"></label><button type="submit" class="rp-b">Go</button></form></div>
+      <div class="rp-row rp-slrow"><div class="rp-slider"><div id="rpMarks" class="rp-marks"></div>
+        <input id="rpSlider" type="range" min="0" max="86399" step="1" value="0" aria-label="Time of the day (UTC)"><div class="rp-ticks">${[0, 6, 12, 18, 24].map(h => `<span style="left:${h / 24 * 100}%">${pad(h)}</span>`).join('')}</div></div></div>
+      <div class="rp-row app-rp-big"><button type="button" class="rp-b" data-j="-600">−10′</button><button type="button" class="rp-b" data-j="-60">−1′</button>
+        <button type="button" class="rp-b rp-play" data-a="play" aria-label="Play / pause">▶</button>
+        <button type="button" class="rp-b" data-j="60">+1′</button><button type="button" class="rp-b" data-j="600">+10′</button></div>
+      <div class="rp-row"><span class="rp-seg app-rp-sp" id="rpSpeeds">${SPEEDS.map(v => `<button type="button" class="rp-b" data-sp="${v}">${v}×</button>`).join('')}</span></div>
+      <div class="app-rp-foot"><span id="rpNote" class="rp-note"></span><span id="rpInfo" class="rp-info"></span></div>
+    </div>`;
+  stage.insertAdjacentHTML('beforeend', APP ? APP_HTML : DESK_HTML);
   const bar = document.getElementById('rpBar'), banner = document.getElementById('rpBanner');
   const daySel = document.getElementById('rpDay'), slider = document.getElementById('rpSlider');
-  function show(v) { bar.hidden = !v; ls('rpOpen', v ? '1' : '0'); if (v) { buildDays(); drawMarks(); } updateUi(); requestDraw(); }
+  function show(v) { bar.hidden = !v; ls('rpOpen', v ? '1' : '0'); if (v) { buildDays(); drawMarks(); } updateUi(); sheetSize(); requestDraw(); }
+  // the app: the zoom buttons stay above the sheet (app.css uses --rp-h)
+  function sheetSize() { if (APP) stage.style.setProperty('--rp-h', (bar.hidden ? 0 : bar.offsetHeight) + 'px'); }
+  if (APP && typeof ResizeObserver === 'function') new ResizeObserver(sheetSize).observe(bar);
   function buildDays() {
     const keep = (S.range && S.range.days_kept) || 30, have = new Set(((S.range && S.range.days) || []).filter(d => d.minutes > 0).map(d => d.day));
     const today = dayStart(Date.now() / 1000);
     let html = '';
     for (let k = 0; k < keep; k++) {
       const d0 = today - k * DAY, iso = new Date(d0 * 1000).toISOString().slice(0, 10);
-      html += `<option value="${d0}"${have.has(iso) ? '' : ' disabled'}${S.day === d0 ? ' selected' : ''}>${WD[new Date(d0 * 1000).getUTCDay()]} ${fmtD(d0)}</option>`;
+      html += `<option value="${d0}"${have.has(iso) ? '' : ' disabled'}${S.day === d0 ? ' selected' : ''}>${WD[new Date(d0 * 1000).getUTCDay()]} ${APP ? fmtD(d0).slice(0, 6) : fmtD(d0)}</option>`;
     }
     daySel.innerHTML = html;
   }
   function drawMarks() {
     const el = document.getElementById('rpMarks');
     if (!el || S.day == null) return;
-    el.innerHTML = S.events.filter(e => e.kind === 'ga' && e.t >= S.day && e.t < S.day + DAY)
-      .map(e => `<span style="left:${(e.t - S.day) / DAY * 100}%" title="${esc((e.callsign || e.icao) + ' ' + fmtT(e.t) + ' ' + (e.rwy || ''))}">GA</span>`).join('');
+    // go-arounds close together share one mark ("3GA"; the title lists them): 1.5 % of the day on the
+    // desktop (~22 min), 5 % in the app's narrow sheet
+    const gap = (APP ? 0.05 : 0.015) * DAY, groups = [];
+    for (const e of S.events.filter(e => e.kind === 'ga' && e.t >= S.day && e.t < S.day + DAY).sort((a, b) => a.t - b.t)) {
+      const g = groups[groups.length - 1];
+      if (g && e.t - g[0].t < gap) g.push(e); else groups.push([e]);
+    }
+    const mid = g => (g[0].t + g[g.length - 1].t) / 2;
+    for (let k = 1; k < groups.length; k++)             // marks still too close: one mark
+      if (mid(groups[k]) - mid(groups[k - 1]) < gap) { groups[k - 1].push(...groups[k]); groups.splice(k, 1); k--; }
+    el.innerHTML = groups.map(g => `<span style="left:${(g[0].t + g[g.length - 1].t) / 2 / DAY * 100 - S.day / DAY * 100}%" title="${esc(g.map(e => (e.callsign || e.icao) + ' ' + fmtT(e.t) + ' ' + (e.rwy || '')).join('\n'))}">${g.length > 1 ? g.length : ''}GA</span>`).join('');
   }
   function updateUi(extra) {
     document.querySelectorAll('#rpBar [data-a="replay"]').forEach(b => b.classList.toggle('on', S.active));
@@ -261,7 +295,10 @@
     if (S.active && daySel.value !== String(S.day)) daySel.value = String(S.day);
     const r = S.range;
     document.getElementById('rpInfo').textContent = r && r.first ? `recorded ${fmtD(r.first).slice(0, 6)}–${fmtD(r.last).slice(0, 6)}` : '';
-    document.getElementById('rpNote').textContent = [S.note, extra].filter(Boolean).join(' · ');
+    const hint = APP && !S.active && !S.note && !extra ? '▶ plays from 10 min ago, or pick a day and a time' : '';
+    document.getElementById('rpNote').textContent = [S.note, extra, hint].filter(Boolean).join(' · ');
+    document.body.classList.toggle('replay-on', S.active);
+    document.body.classList.toggle('replay-open', !bar.hidden);
     banner.hidden = !S.active;
     if (S.active) banner.textContent = `REPLAY · ${fmtD(S.t)} ${fmtT(S.t)} · ${S.playing ? S.speed + '×' : 'PAUSED'}`;
   }
@@ -313,6 +350,10 @@
     const sel = selectedHex(); if (sel) p.set('sel', sel);
     const url = `${location.origin}${location.pathname}?${p.toString()}`;
     const done = () => { S.note = 'Link copied'; updateUi(); setTimeout(() => { if (S.note === 'Link copied') { S.note = ''; updateUi(); } }, 2500); };
+    if (APP && navigator.share) {          // the phone's share sheet (messages, mail …)
+      navigator.share({ title: `RADAR replay ${fmtD(t)} ${fmtT(t)}`, url }).catch(err => { if (!err || err.name !== 'AbortError') { S.note = url; updateUi(); } });
+      return;
+    }
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, () => { S.note = url; updateUi(); });
     else { S.note = url; updateUi(); }
   }
@@ -332,6 +373,9 @@
 
   window.Replay = {
     get active() { return S.active; },
+    get isOpen() { return !bar.hidden; },
+    open: () => { show(true); if (!S.active) loadRange().then(() => { buildDays(); updateUi(); }); },
+    close: () => { live(); show(false); },
     nowMs: () => S.t * 1000,
     acData,
     start: (t, o) => start(t, o),

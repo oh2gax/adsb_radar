@@ -124,3 +124,44 @@ body.app-body { background: var(--radar-bg); font-family: var(--amono); -webkit-
 .app-muted { font-size: 11px; margin-top: 7px; }
 .app-link { display: block; box-sizing: border-box; width: 100%; text-align: left; border: 1px solid var(--ak); background: transparent; padding: 10px; font-size: 12px; margin-top: 8px; color: var(--ak); text-decoration: none; cursor: pointer; }
 .app-foot { padding: 12px 14px 18px; font-size: 10.5px; line-height: 1.5; }
+
+/* Replay (replay.js): the sheet at the bottom of the scope, in the scope's theme like the desktop bar;
+   the top bar is inverted while the scope shows a replay (app.js: body.app-replay), so a replay is never taken for live traffic */
+body.app-replay .app-bar { background: #000; --ak: var(--ag); color: var(--ag); }
+body.app-replay .app-bar .app-ib:active { background: #333; }
+.app-tile2 { grid-column: 1 / -1; }
+.app-tile[hidden] { display: none; }
+.app-stage .rp-banner { display: none; }
+.app-stage .app-rp { left: calc(8px + var(--safe-l)); right: calc(8px + var(--safe-r)); bottom: calc(8px + var(--safe-b)); width: auto; transform: none;
+  font: 13px var(--amono); padding: 10px 10px 6px; z-index: 6; }
+.app-rp .rp-row { flex-wrap: nowrap; gap: 6px; }
+.app-rp .rp-row + .rp-row { margin-top: 8px; }
+.app-rp .rp-b { min-height: 38px; min-width: 38px; padding: 0 10px; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; }
+.app-rp .rp-time { font-size: 19px; min-width: 0; }
+.app-rp select { font-size: 14px; height: 38px; padding: 0 6px; border-radius: 0; max-width: 128px; }
+.app-rp .rp-form input { width: 58px; height: 38px; box-sizing: border-box; font-size: 16px; border-radius: 0; -webkit-user-select: text; user-select: text; }   /* 16 px: iOS does not zoom */
+.app-rp .rp-form button { min-width: 44px; }
+.app-rp .rp-slider { padding: 12px 4px 15px; }
+.app-rp .rp-slider input[type=range] { height: 28px; }
+.app-rp-big .rp-b { flex: 1; min-height: 46px; font-size: 15px; }
+.app-rp-big .rp-play { flex: 1.3; font-size: 19px; }
+.app-rp-sp { display: flex; width: 100%; }
+.app-rp-sp .rp-b { flex: 1; min-width: 0; padding: 0; }
+.app-rp-foot { display: flex; gap: 8px; justify-content: space-between; min-height: 15px; margin-top: 4px; font-size: 11px; }
+.app-rp-foot .rp-note { margin: 0; min-height: 0; word-break: break-word; }
+.app-rp-foot .rp-info { flex: none; }
+/* the zoom buttons stay above the sheet */
+body.replay-open .app-zoom { bottom: calc(var(--rp-h, 0px) + 18px + var(--safe-b)); }
+/* landscape: the sheet on the left, the zoom buttons at their place on the right */
+@media (orientation: landscape) and (max-height: 560px) {
+  .app-stage .app-rp { right: auto; width: min(460px, 60%); padding: 6px 8px 4px; }
+  .app-rp .rp-row + .rp-row { margin-top: 5px; }
+  .app-rp .rp-b, .app-rp select, .app-rp .rp-form input { min-height: 32px; height: 32px; }
+  .app-rp-big .rp-b { min-height: 36px; height: 36px; }
+  .app-rp .rp-slider { padding: 10px 4px 13px; }
+  .app-rp .rp-slider input[type=range] { height: 22px; }
+  body.replay-open .app-zoom { bottom: calc(18px + var(--safe-b)); }
+}
+/* EFHK traffic page: ▶ replays that flight */
+.app-tbl td.app-trp { padding: 10px 12px 10px 10px; font-size: 14px; text-align: center; }
+.app-tbl td.app-trp:active { background: var(--ak); color: var(--ag); }
