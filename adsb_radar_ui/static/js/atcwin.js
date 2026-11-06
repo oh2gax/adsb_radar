@@ -6,8 +6,9 @@
  *   w.show() / w.hide()   - shows / hides and restores the remembered place and size
  *
  * Without a remembered place the window stays where its CSS puts it (its default).
- * AtcWindow.shiftAll(dx): the scope's left edge moved by -dx (the left pane hidden / shown) - every window
- * placed from the left (and every remembered place) moves by dx, so it stays where it was on the screen.
+ * AtcWindow.shiftAll(x0, x1): the scope's left edge moved from x0 to x1 on the screen (the left pane hidden /
+ * shown). Every window remembers where its left edge was put on the screen (sx: by dragging it, or where it
+ * first was) and goes back there - only as far right as needed while the pane is in the way.
  */
 const AtcWindow = (() => {
   const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (_) { return null; } };
@@ -17,11 +18,12 @@ const AtcWindow = (() => {
     const stage = win.parentElement;
     const head = opt.head || win.querySelector('.wn-head');
 
-    function save() {
+    function save(moved) {                  // moved: dragged by the user - its new place on the screen (sx)
       if (win.hidden) return;
-      const s = stage.getBoundingClientRect(), r = win.getBoundingClientRect();
+      const s = stage.getBoundingClientRect(), r = win.getBoundingClientRect(), old = geom(opt.key) || {};
       ls(opt.key, JSON.stringify({ left: Math.round(r.left - s.left), top: Math.round(r.top - s.top),
-                                   width: Math.round(r.width), height: Math.round(r.height) }));
+                                   width: Math.round(r.width), height: Math.round(r.height),
+                                   sx: Math.round(moved || !Number.isFinite(old.sx) ? r.left : old.sx) }));
     }
     function keepInside() {                 // never lose a window outside the scope
       if (win.hidden) return;
@@ -52,41 +54,39 @@ const AtcWindow = (() => {
         win.style.left = Math.max(0, Math.min(ev.clientX - s.left - dx, s.width - r.width)) + 'px';
         win.style.top = Math.max(0, Math.min(ev.clientY - s.top - dy, s.height - 30)) + 'px';
       };
-      const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); save(); };
+      const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); save(true); };
       document.addEventListener('mousemove', move);
       document.addEventListener('mouseup', up);
     });
     let t = null;
-    if (window.ResizeObserver) new ResizeObserver(() => { clearTimeout(t); t = setTimeout(save, 300); }).observe(win);
+    if (window.ResizeObserver) new ResizeObserver(() => { clearTimeout(t); t = setTimeout(() => save(false), 300); }).observe(win);
     window.addEventListener('resize', keepInside);
-    all.push({ win, key: opt.key, save });
+    all.push({ win, key: opt.key, save, stage });
     return {
       show() { win.hidden = false; restore(); },
       hide() { win.hidden = true; },
     };
   }
   const LATER = ['wnGeom'];                // windows made only when first opened (What's new): their remembered place
-  function shiftAll(dx) {
-    if (!dx) return;
-    for (const k of LATER) {
-      if (all.some(w => w.key === k)) continue;
-      try {
-        const g = JSON.parse(ls(k) || 'null');
-        if (g && Number.isFinite(g.left)) { g.left = Math.max(0, Math.round(g.left + dx)); ls(k, JSON.stringify(g)); }
-      } catch (_) { /* nothing remembered */ }
-    }
+  function geom(k) { try { return JSON.parse(ls(k) || 'null'); } catch (_) { return null; } }
+  function shiftStored(k, x0, x1) {
+    const g = geom(k);
+    if (!g || !Number.isFinite(g.left)) return;
+    const sx = Number.isFinite(g.sx) ? g.sx : x0 + g.left;
+    g.left = Math.max(0, Math.round(sx - x1)); g.sx = Math.round(sx);
+    ls(k, JSON.stringify(g));
+  }
+  function shiftAll(x0, x1) {
+    if (x0 === x1) return;
+    for (const k of LATER) if (!all.some(w => w.key === k)) shiftStored(k, x0, x1);
     for (const w of all) {
-      if (!w.win.hidden) {
-        if (w.win.style.left && w.win.style.right === 'auto') {          // placed from the left (a right-anchored default stays)
-          w.win.style.left = Math.max(0, (parseFloat(w.win.style.left) || 0) + dx) + 'px';
-          w.save();
-        }
-      } else {
-        try {
-          const g = JSON.parse(ls(w.key) || 'null');
-          if (g && Number.isFinite(g.left)) { g.left = Math.max(0, Math.round(g.left + dx)); ls(w.key, JSON.stringify(g)); }
-        } catch (_) { /* nothing remembered */ }
-      }
+      if (w.win.hidden) { shiftStored(w.key, x0, x1); continue; }
+      if (!(w.win.style.left && w.win.style.right === 'auto')) continue;   // a right-anchored default stays
+      const g = geom(w.key) || {}, cur = parseFloat(w.win.style.left) || 0;
+      const sx = Number.isFinite(g.sx) ? g.sx : x0 + cur;
+      const sw = w.stage.getBoundingClientRect().width, ww = w.win.getBoundingClientRect().width;
+      w.win.style.left = Math.max(0, Math.min(sx - x1, sw - ww)) + 'px';
+      w.save(false);
     }
   }
   return { make, shiftAll };

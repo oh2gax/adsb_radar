@@ -93,7 +93,7 @@
     const st = document.querySelector('main.stage'), x0 = st ? st.getBoundingClientRect().left : 0;
     document.body.classList.toggle('pane-hidden', v);
     // the windows keep their place on the screen (the scope's left edge moves by the pane's width)
-    if (byUser && st && typeof AtcWindow !== 'undefined') AtcWindow.shiftAll(x0 - st.getBoundingClientRect().left);
+    if (byUser && st && typeof AtcWindow !== 'undefined') AtcWindow.shiftAll(x0, st.getBoundingClientRect().left);
     if (showBtn) showBtn.hidden = !v;
     ls('paneHidden', v ? '1' : '0');
     window.dispatchEvent(new Event('resize'));        // the canvas and the windows follow the new width

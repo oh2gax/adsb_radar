@@ -61,6 +61,8 @@
   <script>
     window.RADAR_CENTER = {lat: {{ '%.6f' % center_lat }}, lon: {{ '%.6f' % center_lon }}};
     window.RADAR_ASSET = "{{ asset_tag }}";
+    // the left pane hidden (sidepane.js): known before the scope and the windows take their places
+    try { if (localStorage.getItem('paneHidden') === '1') document.body.classList.add('pane-hidden'); } catch (e) {}
   </script>
   <script src="/static/js/topsky.js?v={{ asset_tag }}"></script>
   <script src="/static/js/radar.js?v={{ asset_tag }}"></script>
