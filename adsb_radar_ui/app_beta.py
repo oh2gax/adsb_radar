@@ -852,6 +852,10 @@ def _navdata_keeper():
         try:
             changed, meta, msg = navdata.update(log=lambda t: print(t, file=sys.stderr))
             _navdata.update(last_check=time.time(), error=None, message=msg)
+            try:                                      # the next amendment (listed in advance)
+                _navdata["next"] = navdata.next_package()
+            except Exception:
+                pass
             print(f"[navdata] {msg}", file=sys.stderr)
             if changed:
                 _load_navaids()
@@ -860,6 +864,7 @@ def _navdata_keeper():
         except Exception as e:                        # network, parse or check failure: keep the old data
             _navdata.update(last_check=time.time(), error=str(e)[:300])
             print(f"[navdata] check failed: {e}", file=sys.stderr)
+        _navdata["next_check"] = time.time() + max(1.0, config.NAVDATA_CHECK_HOURS) * 3600
         time.sleep(max(1.0, config.NAVDATA_CHECK_HOURS) * 3600)
 
 @app.route("/api/navaids")
@@ -1546,7 +1551,38 @@ def _airact_keeper():
         except Exception as e:
             _airact.update(error=str(e)[:300], last_check=time.time())
             print(f"[airact] check failed: {e}", file=sys.stderr)
+        _airact["next_check"] = time.time() + max(5.0, float(os.environ.get("AIRACT_CHECK_MIN", "30"))) * 60
         time.sleep(max(5.0, float(os.environ.get("AIRACT_CHECK_MIN", "30"))) * 60)
+
+
+_STARTED = time.time()
+
+
+@app.route("/api/data_status")
+def api_data_status():
+    """The downloaded data: AIP Finland (installed AIRAC, last / next check, the next amendment) and the
+    active-area sources NOTAM and AUP / UUP (last / next check, last change, count, error). Shown in the
+    left pane's STATUS and the app's DATA section."""
+    m = _navdata["meta"] or {}
+    nx = _navdata.get("next")
+    nd_next = _navdata.get("next_check") or (_STARTED + 60 if config.NAVDATA_AUTO else None)
+    aa_next = _airact.get("next_check") or (_STARTED + 75 if os.environ.get("AIRACT_AUTO", "1") not in ("0", "false", "no") else None)
+    ch = airact.last_change()
+    st = airact.STATUS
+    body = {
+        "now": time.time(),
+        "aip": {"installed": bool(m), "effective": m.get("effective"), "amdt": m.get("amdt"), "package": m.get("package"),
+                "fetched": m.get("fetched"), "last_check": _navdata["last_check"], "next_check": nd_next,
+                "next_airac": nx[1] if nx else None, "error": _navdata["error"]},
+        "notam": {"last_check": (st.get("notam") or {}).get("checked"), "next_check": aa_next, "last_change": ch.get("notam"),
+                  "n": (st.get("notam") or {}).get("n"), "error": (st.get("notam") or {}).get("error")},
+        "aup": {"last_check": (st.get("aup") or {}).get("checked"), "next_check": aa_next, "last_change": ch.get("aup"),
+                "n": (st.get("aup") or {}).get("n"), "files": (st.get("aup") or {}).get("files") or [],
+                "error": (st.get("aup") or {}).get("error")},
+    }
+    resp = _json_response(body)
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 @app.route("/api/airspace_active")

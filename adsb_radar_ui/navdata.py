@@ -67,6 +67,13 @@ def packages():
     return sorted(set(out), key=lambda p: p[1], reverse=True)
 
 
+def next_package(today=None):
+    """(folder, effective) of the next listed package after the one in force, or None."""
+    today = today or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    later = [p for p in packages() if p[1] > today]
+    return min(later, key=lambda p: p[1]) if later else None
+
+
 def package_in_force(today=None):
     today = today or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     for folder, eff in packages():

@@ -175,3 +175,5 @@ body.replay-open .app-zoom { bottom: calc(var(--rp-h, 0px) + 18px + var(--safe-b
 /* EFHK traffic page: ▶ replays that flight */
 .app-tbl td.app-trp { padding: 10px 12px 10px 10px; font-size: 14px; text-align: center; }
 .app-tbl td.app-trp:active { background: var(--ak); color: var(--ag); }
+#appDataStatus .ds-err { color: #c00000; }
+#appDataStatus .ds-r { font-size: 12px; }

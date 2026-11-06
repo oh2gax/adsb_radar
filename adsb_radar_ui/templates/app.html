@@ -203,6 +203,14 @@
   </details>
 
   <details class="app-sec">
+    <summary>DATA</summary>
+    <div class="app-sb">
+      <div class="ds" id="appDataStatus">Loading…</div>
+      <div class="app-muted">AIP Finland and the active areas (NOTAM, AUP / UUP) are downloaded by the server from AIS Finland, www.ais.fi. Times UTC.</div>
+    </div>
+  </details>
+
+  <details class="app-sec">
     <summary>GENERAL</summary>
     <div class="app-sb">
       <div class="app-tg app-tg1"><label>Keep the screen on<input type="checkbox" id="appWake"><i></i></label></div>
@@ -222,6 +230,7 @@
 <script src="/static/js/radar.js?v={{ asset_tag }}"></script>
 <script src="/static/js/replay.js?v={{ asset_tag }}"></script>
 <script src="/static/js/reports.js?v={{ asset_tag }}"></script>
+<script src="/static/js/datastatus.js?v={{ asset_tag }}"></script>
 <script src="/static/js/app.js?v={{ asset_tag }}"></script>
 </body>
 </html>

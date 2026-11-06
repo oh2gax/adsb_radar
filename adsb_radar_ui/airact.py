@@ -282,16 +282,22 @@ def _store(src, items, now):
             c.close()
 
 
+STATUS = {"notam": {}, "aup": {}}          # the last check of each source (for /api/data_status)
+
+
 def update(log=None):
-    """Read both sources; returns a short message. A source that fails keeps its last result."""
+    """Read both sources; returns a short message (STATUS has the details). A source that fails keeps its
+    last result."""
     now = time.time()
     msgs, errs = [], []
     try:
         items = parse_wrng(_get(WRNG_URL))
         ch = _store("notam", items, now)
         msgs.append(f"NOTAM {len(items)}" + (" (changed)" if ch else ""))
+        STATUS["notam"] = {"checked": now, "n": len(items), "error": None}
     except Exception as e:
         errs.append(f"NOTAM: {e}")
+        STATUS["notam"] = dict(STATUS["notam"], checked=now, error=str(e)[:200])
     try:
         files = aup_files(_get(AUP_INDEX))
         items, names = [], []
@@ -304,8 +310,10 @@ def update(log=None):
         if files:
             ch = _store("aup", items, now)
             msgs.append(f"{', '.join(names)}: {len(items)} areas" + (" (changed)" if ch else ""))
+        STATUS["aup"] = {"checked": now, "n": len(items), "files": names, "error": None}
     except Exception as e:
         errs.append(f"AUP: {e}")
+        STATUS["aup"] = dict(STATUS["aup"], checked=now, error=str(e)[:200])
     msg = " · ".join(msgs + errs)
     if log:
         log(f"[airact] {msg}")
@@ -329,6 +337,22 @@ def _snaps(c, src, t, after_s):
         r3 = c.execute("SELECT t, data FROM snap WHERE src=? AND t>? AND t<=? ORDER BY t LIMIT 1", (src, int(t), int(t + 6 * 3600))).fetchone()
         if r3:
             out.append(r3)
+    return out
+
+
+def last_change():
+    """{notam: epoch, aup: epoch} of the newest kept result of each source."""
+    out = {}
+    if not os.path.exists(DB):
+        return out
+    with _lock:
+        c = _db()
+        try:
+            for src in ("notam", "aup"):
+                r = c.execute("SELECT MAX(t) FROM snap WHERE src=?", (src,)).fetchone()
+                out[src] = r[0] if r else None
+        finally:
+            c.close()
     return out
 
 

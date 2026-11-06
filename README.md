@@ -67,7 +67,9 @@ top-left logo; nothing has to be edited by hand.
   (`static/js/trafficlist.js`)
 - Four themes, label overlap avoidance, a filter by ICAO24 code / range, registration or callsign (`*` = any), Solo (only the selected aircraft)
 - "FEED LOST" warning when the feed stops; targets are cleared after 30 s
-- All viewer settings are kept in the browser (localStorage); "Reset UI" clears them
+- All viewer settings are kept in the browser (localStorage); "Reset UI" clears them. A new browser starts with
+  the defaults of `static/js/defaults.js` (only settings not chosen yet are filled in; the app has its own)
+- STATUS → DATA (`static/js/datastatus.js`, `/api/data_status`): what the server has downloaded and when it checks next
 
 ## Data and credits
 
@@ -299,6 +301,7 @@ A TCP server that sends one JSON array of aircraft per connection and closes it:
 | `/api/navaids_meta` | counts, sources and `navdata` (AIRAC package, effective date, last check, error) |
 | `/api/airspace_labels` | the LIMITS labels of the AIP airspaces (name, class, upper / lower, position, free radius) |
 | `/api/airspace_active?t=` | the areas active at `t` (default now): id, source, limits, until; temporary circles; last check |
+| `/api/data_status` | the downloads: AIP (AIRAC in use, last / next check, next AIRAC), NOTAM and AUP / UUP (last / next check, last change, count, error) — STATUS → DATA |
 | `/api/overlays_meta`, `/api/overlay/<name>?dec=2` | line overlays (GeoJSON in `data/overlays`), one whole layer, gzip, cacheable |
 | `/api/qnh` | latest METAR and QNH (Auto QNH, `METAR_STATION`) |
 | `/api/efhk_traffic?kind=both&hours=3` | EFHK landings / departures from MODE-S Wind (kind arr/dep/both, hours 1/3/6/12/24) |

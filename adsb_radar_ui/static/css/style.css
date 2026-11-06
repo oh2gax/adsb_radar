@@ -295,6 +295,13 @@ body.theme-full-el .rp-sev, body.theme-full-el-yellow .rp-sev { color: inherit; 
 body.pane-hidden #app { grid-template-columns: 1fr; }
 body.pane-hidden .side.lp { display: none; }
 body .stage .overlayBtns #btnPane[hidden] { display: none; }
+/* STATUS → DATA (datastatus.js) */
+.ds-h { font-size: 10px; letter-spacing: 0.12em; margin: 8px 0 3px; font-weight: 700; }
+.ds-r { display: flex; gap: 6px; font-size: 11px; line-height: 1.35; margin-bottom: 4px; }
+.ds-k { flex: none; width: 46px; font-weight: 700; }
+.ds-v { flex: 1; min-width: 0; }
+.ds-err { color: #ff2d2d; font-weight: 700; }
+body.theme-full-el .ds-err, body.theme-full-el-yellow .ds-err { color: inherit; text-decoration: underline; }
 .lp [hidden] { display: none !important; }
 .lp-top { padding: 8px 10px 7px; border-bottom: 1px solid var(--radar-text); }
 .lp-logo { display: flex; justify-content: space-between; align-items: baseline; }

@@ -7,6 +7,11 @@ Format: a version starts with `## v.DDMMYYYY — title`; under it bullets (`- `,
 sub-bullets indented by two spaces) or plain paragraphs. **bold**, *italic* and
 `code` are shown as such.
 
+## v.06112026 — Data status, new default view
+
+- **Data status** — *STATUS → DATA* in the left pane (in the app: ☰ → *DATA*) shows the data the radar downloads: the AIRAC amendment of AIP Finland in use, when it was checked and the next check, and the **next AIRAC** with the day it will be installed; for the active areas the NOTAM (NAV WRNG) and the AUP / UUP — last check, next check (every 30 minutes), last change and how many activations or areas. A failed check shows in red.
+- **New default view** — a new browser (and *RESET UI*) now opens with TopSky labels, the airspace lines with their limits, the active areas with the inactive ones hidden, 23 NM, and the TRAFFIC LIST, EFHK TRAFFIC and METAR & TAF windows open. Settings you have chosen yourself stay as they are.
+
 ## v.05112026 — Replay, pilot reports, new left pane, user guide, AIP Finland, active airspace
 
 - **Active airspace in red** — *MAP → Active*: **P/R/D** shows the restricted and danger areas activated by NOTAM (firing, UAV flights, exercises) and **TSA/TRA** the military training areas of the daily Airspace Use Plan (AUP / UUP), in red with a tag: the area, its limits and when it ends (`EFR92A / SFC–FL310 →1400Z`). The radar checks AIS Finland every 30 minutes and follows the schedules (an area booked MON-FRI 0600-1500 is red only then). *Inactive* **SHOW** draws the other areas when their *Lines* button is on, **HIDE** leaves only the active ones. In a replay you see the areas that were active at that moment. In the app: ☰ → *Map*.
