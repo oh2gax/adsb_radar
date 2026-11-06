@@ -1269,6 +1269,10 @@ function drawStatic(w, h, cx, cy, R){
 const LBL_LAYERS = {lblTma: 'fi_tma', lblRestricted: 'fi_restricted', lblSectors: 'fi_sectors'};
 const LBL_ON = {};
 for(const id of Object.keys(LBL_LAYERS)) LBL_ON[id] = localStorage.getItem(id) === '1' ? 1 : 0;
+// FREQ (MAP → Freq): the frequency of the unit under the label - a sector: 127.425; a TMA, CTA, FIZ or CTR:
+// HELSINKI RADAR / 119.100 129.850 (ENR 2.1, the CTRs from the tower of AD 2.18); also without Limits
+const FREQ_LAYERS = {freqSectors: 'fi_sectors', freqTma: 'fi_tma'};
+for(const id of Object.keys(FREQ_LAYERS)) LBL_ON[id] = localStorage.getItem(id) === '1' ? 1 : 0;
 let airspaceLabels = [], airspaceLabelsVer = '';
 async function fetchAirspaceLabels(){
   try{
@@ -1278,7 +1282,7 @@ async function fetchAirspaceLabels(){
     markStaticDirty(); requestDraw();
   }catch(e){}
 }
-for(const id of Object.keys(LBL_LAYERS)){
+for(const id of [...Object.keys(LBL_LAYERS), ...Object.keys(FREQ_LAYERS)]){
   const cb = document.getElementById(id);
   if(!cb) continue;
   cb.checked = !!LBL_ON[id];
@@ -1291,8 +1295,10 @@ for(const id of Object.keys(LBL_LAYERS)){
 }
 function drawAirspaceLabels(g, w, h, cx, cy, R, obst){
   if(!airspaceLabels.length) return;
-  const on = {};
-  for(const [id, layer] of Object.entries(LBL_LAYERS)) on[layer] = LBL_ON[id] && overlayLayers[layer] && overlayLayers[layer].checked;
+  const on = {}, lim = {}, frq = {};
+  for(const [id, layer] of Object.entries(LBL_LAYERS)) lim[layer] = !!LBL_ON[id];
+  for(const [id, layer] of Object.entries(FREQ_LAYERS)) frq[layer] = !!LBL_ON[id];
+  for(const layer of ['fi_tma', 'fi_restricted', 'fi_sectors']) on[layer] = (lim[layer] || frq[layer]) && overlayLayers[layer] && overlayLayers[layer].checked;
   if(!Object.values(on).some(Boolean)) return;
   const order = ['fi_tma', 'fi_restricted', 'fi_sectors'];
   const pxPerNm = R / rangeNm, lh = 11;
@@ -1308,10 +1314,13 @@ function drawAirspaceLabels(g, w, h, cx, cy, R, obst){
       const p = projectNm(L.lat, L.lon);
       const x = cx + p.x * pxPerNm, y = cy - p.y * pxPerNm;
       if(x < -60 || y < -40 || x > w + 60 || y > h + 40) continue;
-      const title = L.name + (L.cls ? '  ' + L.cls : '');
-      const hasBox = !!(L.up || L.lo);
+      const showLim = lim[layer], fl = frq[layer] && L.freq ? (layer === 'fi_sectors' ? [L.freq] : [L.cs, L.freq].filter(Boolean)) : [];
+      if(!showLim && !fl.length) continue;
+      const title = L.name + (showLim && L.cls ? '  ' + L.cls : '');
+      const hasBox = showLim && !!(L.up || L.lo);
       const tw = g.measureText(title).width, bw = hasBox ? Math.max(g.measureText(L.up || '').width, g.measureText(L.lo || '').width) + 8 : 0;
-      const W = Math.max(tw, bw) + 2, H = lh + (hasBox ? 2 * lh + 4 : 0);
+      const fw = fl.length ? Math.max(...fl.map(t => g.measureText(t).width)) : 0;
+      const W = Math.max(tw, bw, fw) + 2, H = lh + (hasBox ? 2 * lh + 4 : 0) + fl.length * lh;
       if(L.r * pxPerNm * 2 < Math.max(W, H) * 0.9) continue;          // the area is too small on the screen
       let box = null;
       for(const [dx, dy] of [[0, 0], [0, -H], [0, H], [-W * 0.6, 0], [W * 0.6, 0]]){
@@ -1334,6 +1343,13 @@ function drawAirspaceLabels(g, w, h, cx, cy, R, obst){
         g.beginPath(); g.moveTo(bx + 0.5, by + lh + 1.5); g.lineTo(bx + bw + 0.5, by + lh + 1.5); g.stroke();
         g.fillText(L.up || '', mx, by + lh / 2 + 1);
         g.fillText(L.lo || '', mx, by + lh * 1.5 + 2);
+      }
+      let fy = box.y + lh + (hasBox ? 2 * lh + 4 : 0);
+      for(const t of fl){
+        const w2 = g.measureText(t).width;
+        g.fillStyle = colors.bg; g.fillRect(mx - w2 / 2 - 2, fy, w2 + 4, lh);
+        g.fillStyle = colors.navaid || colors.text; g.fillText(t, mx, fy + lh / 2);
+        fy += lh;
       }
     }
   }

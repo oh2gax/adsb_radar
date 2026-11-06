@@ -35,7 +35,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.environ.get("NAVDATA_DIR", os.path.join(HERE, "data", "navdata"))
 BORDER_FILE = os.path.join(HERE, "data", "fi_borders.geojson")   # Finland's land borders (Natural Earth, public domain)
 UA = "adsb_radar navdata (radar.oh2gax.org)"
-FORMAT = 4          # of the installed files; a newer one rebuilds the data once (2: airspace class, 3: approach lines, 4: TSA / TRA)
+FORMAT = 5          # of the installed files; a newer one rebuilds the data once (2: airspace class, 3: approach lines, 4: TSA / TRA, 5: frequencies)
 COORD = r"(\d{2})(\d{2})(\d{2}(?:\.\d+)?)\s*([NS])\s*(\d{3})(\d{2})(\d{2}(?:\.\d+)?)\s*([EW])"
 
 
@@ -330,12 +330,52 @@ def parse_route(html, name):
     return pts
 
 
+_CS_RE = re.compile(r"\b([A-ZÄÖÅ][A-ZÄÖÅ\-]*(?: [A-ZÄÖÅ\-]+)* (?:CONTROL|RADAR|APPROACH|TOWER|INFORMATION|ARRIVAL|DIRECTOR|RADIO))\b")
+_FREQ_RE = re.compile(r"\b(1[1-3]\d\.\d{2,3})\b(?:\s*(PRIMARY|SECONDARY|GUARD|EMERG\w*|ALTN|STANDBY))?")
+
+
+def _unit_freq(seg):
+    """The English call sign and the frequencies (not GUARD / EMERG) of one area's row: ("HELSINKI RADAR",
+    ["119.100", "129.850"])."""
+    fm = [f for f in _FREQ_RE.finditer(seg)]
+    if not fm:
+        return "", []
+    cs = [c.group(1) for c in _CS_RE.finditer(seg[:fm[0].start()])]
+    freqs = [f.group(1) for f in fm if not (f.group(2) or "").startswith(("GUARD", "EMERG"))]
+    return (cs[-1] if cs else ""), list(dict.fromkeys(freqs))
+
+
+def parse_ad218_twr(html):
+    """AD 2.18: the aerodrome's tower (or AFIS) - ("HELSINKI TOWER", "118.600"), the frequency of its CTR;
+    ("", "") if none."""
+    t = _text(html)
+    i = t.find("ATS COMMUNICATION FACILITIES")
+    if i < 0:
+        return "", ""
+    lines = [x.strip() for x in t[i:i + 6000].split("\n") if x.strip()]
+    for k, ln in enumerate(lines):
+        if ln in ("TWR", "AFIS"):
+            cs = ""
+            for ln2 in lines[k + 1:k + 8]:
+                fm = re.match(r"(1[1-3]\d\.\d{2,3}) ?MHZ", ln2)
+                if fm:
+                    return cs, fm.group(1)
+                c = _CS_RE.search(ln2)
+                if c:
+                    cs = c.group(1)
+            break
+    return "", ""
+
+
 def parse_areas(html):
-    """ENR 2.1 / ENR 5.1 / AD 2.17: [{name, desig, text (lateral limits), upper, lower}] for every
-    'Area bounded by lines joining points ... to point of origin.'"""
+    """ENR 2.1 / ENR 5.1 / AD 2.17: [{name, desig, text (lateral limits), upper, lower, cls, cs, freq}] for
+    every 'Area bounded by lines joining points ... to point of origin.' (cs / freq: the unit's English call
+    sign and frequencies of the row, ENR 2.1)."""
     t = _text(html)
     out = []
-    for m in re.finditer(r"Area bounded by lines joining points\s*\n?(.*?to point of origin\.?)", t, re.S):
+    ms = list(re.finditer(r"Area bounded by lines joining points\s*\n?(.*?to point of origin\.?)", t, re.S))
+    for mi, m in enumerate(ms):
+        seg = t[m.end():ms[mi + 1].start() if mi + 1 < len(ms) else m.end() + 900]
         before = t[:m.start()].split("\n")[-4:]
         after = t[m.end():].split("\n")
         after = [a for a in after if a.strip()][:9]
@@ -364,8 +404,9 @@ def parse_areas(html):
                 up, lo = [x.strip() for x in after[0].split("/", 1)]
             elif len(after) > 1:
                 up, lo = after[0], after[1]
+        cs, freq = _unit_freq(seg)
         out.append({"name": name, "desig": desig, "text": " ".join(m.group(1).split()), "upper": up, "lower": lo,
-                    "cls": "".join(dict.fromkeys(cls))})
+                    "cls": "".join(dict.fromkeys(cls)), "cs": cs, "freq": freq})
     return out
 
 
@@ -501,7 +542,8 @@ def build(folder, eff, log=print):
         ring = area_ring(a["text"])
         n = (a["name"] + " " + a["desig"]).upper()
         kind = "fi_fir" if "FIR" in n else "fi_sectors" if "SECT" in n else "fi_tma"
-        feats[kind].append(_feature(a["name"], ring, {"desig": a["desig"], "upper": a["upper"], "lower": a["lower"], "cls": a["cls"]}))
+        feats[kind].append(_feature(a["name"], ring, {"desig": a["desig"], "upper": a["upper"], "lower": a["lower"], "cls": a["cls"],
+                                                      "cs": a["cs"], "freq": " ".join(a["freq"][:3])}))
     for a in parse_areas(page("ENR 5.1")):
         ring = area_ring(a["text"])
         feats["fi_restricted"].append(_feature(a["name"], ring, {"upper": a["upper"], "lower": a["lower"],
@@ -523,9 +565,11 @@ def build(folder, eff, log=print):
             continue
         navs.extend(parse_ad219(h, icao))
         feats["fi_approach"].extend(approach_features(icao, parse_ad212(h), parse_ad224_approaches(h)))
+        twr_cs, twr_f = parse_ad218_twr(h)                 # the CTR's frequency: the tower of AD 2.18
         for a in parse_areas(h):
             if "CTR" in a["name"].upper():
-                feats["fi_tma"].append(_feature(a["name"], area_ring(a["text"]), {"upper": a["upper"], "lower": a["lower"], "cls": a["cls"]}))
+                feats["fi_tma"].append(_feature(a["name"], area_ring(a["text"]), {"upper": a["upper"], "lower": a["lower"], "cls": a["cls"],
+                                                                                  "cs": twr_cs, "freq": twr_f}))
         if not have_pdf:
             continue
         try:
@@ -748,7 +792,7 @@ def labels(out_dir=OUT_DIR):
             if layer == "fi_sectors" and up in ("FL660", "UNL") and lo in ("SFC", "GND"):
                 up = lo = ""                               # every sector: FL 660 / SFC - the box says nothing
             out.append({"layer": layer, "name": name, "cls": pr.get("cls", ""), "up": up, "lo": lo,
-                        "lat": lat, "lon": lon, "r": r})
+                        "cs": pr.get("cs", ""), "freq": pr.get("freq", ""), "lat": lat, "lon": lon, "r": r})
     return out
 
 

@@ -53,8 +53,9 @@ top-left logo; nothing has to be edited by hand.
   heading, drift, roll, wind, temperature and NACp from MODE-S Wind's Beast feed
 - **AIP Finland, updated automatically** (`navdata.py`): the Finnish navaids, IFR points (en-route and the
   aerodromes' own), the RNAV routes, the FIR, TMA / CTA / CTR, ACC sectors, prohibited / restricted /
-  danger areas and the TSA / TRA training areas from the eAIP of AIS Finland; a new AIRAC amendment is
-  installed when it takes effect
+  danger areas and the TSA / TRA training areas from the eAIP of AIS Finland, with the units' frequencies
+  (ENR 2.1; the CTRs from the tower of AD 2.18) for MAP → Freq; a new AIRAC amendment is installed when it
+  takes effect
 - **Active airspace** (`airact.py`): the restricted and danger areas activated by NOTAM (firing, UAV, exercises)
   and the training areas of the daily Airspace Use Plan (AUP / UUP) in red with their limits and end time,
   checked every 30 minutes; inactive areas shown or hidden; in a replay the areas active then

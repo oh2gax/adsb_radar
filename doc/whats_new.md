@@ -7,8 +7,9 @@ Format: a version starts with `## v.DDMMYYYY — title`; under it bullets (`- `,
 sub-bullets indented by two spaces) or plain paragraphs. **bold**, *italic* and
 `code` are shown as such.
 
-## v.06112026 — Data status, new default view
+## v.06112026 — Data status, new default view, frequencies
 
+- **Frequencies on the map** — *MAP → Freq* (off by default): **SECTORS** puts each ACC sector's Helsinki Control frequency under its name (`SECT A` / `127.425`), **TMA/CTA** the unit and its frequencies under the TMAs, CTAs, FIZs and CTRs (`EFHK TMA LOWER` / `HELSINKI RADAR` / `119.100 129.850`, `EFHK CTR` / `HELSINKI TOWER` / `118.600`) — from AIP Finland, updated with every AIRAC. Shown with or without the *Limits* boxes, while the area's lines are on. In the app: ☰ → *Map*.
 - **Data status** — *STATUS → DATA* in the left pane (in the app: ☰ → *DATA*) shows the data the radar downloads: the AIRAC amendment of AIP Finland in use, when it was checked and the next check, and the **next AIRAC** with the day it will be installed; for the active areas the NOTAM (NAV WRNG) and the AUP / UUP — last check, next check (every 30 minutes), last change and how many activations or areas. A failed check shows in red.
 - **New default view** — a new browser (and *RESET UI*) now opens with TopSky labels, the airspace lines with their limits, the active areas with the inactive ones hidden, 23 NM, and the TRAFFIC LIST, EFHK TRAFFIC and METAR & TAF windows open. Settings you have chosen yourself stay as they are.
 
