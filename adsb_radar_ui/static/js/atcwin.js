@@ -6,9 +6,12 @@
  *   w.show() / w.hide()   - shows / hides and restores the remembered place and size
  *
  * Without a remembered place the window stays where its CSS puts it (its default).
+ * AtcWindow.shiftAll(dx): the scope's left edge moved by -dx (the left pane hidden / shown) - every window
+ * placed from the left (and every remembered place) moves by dx, so it stays where it was on the screen.
  */
 const AtcWindow = (() => {
   const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (_) { return null; } };
+  const all = [];
 
   function make(win, opt) {
     const stage = win.parentElement;
@@ -37,7 +40,7 @@ const AtcWindow = (() => {
         if (g.width > 0) win.style.width = g.width + 'px';
         if (g.height > 0) win.style.height = g.height + 'px';
       }
-      keepInside();
+      setTimeout(keepInside, 0);            // after the page's layout is final (the left pane hidden at start: sidepane.js)
     }
     if (head) head.addEventListener('mousedown', e => {
       if (e.button !== 0 || e.target.closest('button')) return;
@@ -56,10 +59,35 @@ const AtcWindow = (() => {
     let t = null;
     if (window.ResizeObserver) new ResizeObserver(() => { clearTimeout(t); t = setTimeout(save, 300); }).observe(win);
     window.addEventListener('resize', keepInside);
+    all.push({ win, key: opt.key, save });
     return {
       show() { win.hidden = false; restore(); },
       hide() { win.hidden = true; },
     };
   }
-  return { make };
+  const LATER = ['wnGeom'];                // windows made only when first opened (What's new): their remembered place
+  function shiftAll(dx) {
+    if (!dx) return;
+    for (const k of LATER) {
+      if (all.some(w => w.key === k)) continue;
+      try {
+        const g = JSON.parse(ls(k) || 'null');
+        if (g && Number.isFinite(g.left)) { g.left = Math.max(0, Math.round(g.left + dx)); ls(k, JSON.stringify(g)); }
+      } catch (_) { /* nothing remembered */ }
+    }
+    for (const w of all) {
+      if (!w.win.hidden) {
+        if (w.win.style.left && w.win.style.right === 'auto') {          // placed from the left (a right-anchored default stays)
+          w.win.style.left = Math.max(0, (parseFloat(w.win.style.left) || 0) + dx) + 'px';
+          w.save();
+        }
+      } else {
+        try {
+          const g = JSON.parse(ls(w.key) || 'null');
+          if (g && Number.isFinite(g.left)) { g.left = Math.max(0, Math.round(g.left + dx)); ls(w.key, JSON.stringify(g)); }
+        } catch (_) { /* nothing remembered */ }
+      }
+    }
+  }
+  return { make, shiftAll };
 })();
