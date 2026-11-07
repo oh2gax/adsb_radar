@@ -7,8 +7,9 @@ Format: a version starts with `## v.DDMMYYYY — title`; under it bullets (`- `,
 sub-bullets indented by two spaces) or plain paragraphs. **bold**, *italic* and
 `code` are shown as such.
 
-## v.07112026 — User guide in Finnish
+## v.07112026 — User guide in Finnish, data alarm
 
+- **Data alarm on the scope** — when a download of AIP Finland, the NOTAM (NAV WRNG) or the AUP / UUP fails, a red line at the top of the scope says so (`DATA: NOTAM CHECK FAILED`), also with the left pane hidden and in the app; the details are in *STATUS → DATA*. The radar keeps the last data it got. It also warns when a check is overdue (`CHECK OVERDUE`) and when the status itself can't be read from the server (`DATA: STATUS NOT UPDATED`). A failed AIP check is now tried again after an hour instead of the next day.
 - **RADAR-käyttöopas suomeksi** — the user guide is now also in Finnish: *What's new · Guides → USER GUIDES → RADAR-käyttöopas (suomeksi)*, 17 pages, the same content as the English guide (the program's own names, such as the buttons, stay in English as on the screen). In the app: ☰ → *What's new · Guides*.
 
 ## v.06112026 — Data status, new default view, frequencies

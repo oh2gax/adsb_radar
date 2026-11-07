@@ -137,6 +137,7 @@ it rolls back to the previous commit by itself. Hand edits made on the server ar
 | `REPLAY_DAYS` / `REPLAY_RANGE_NM` | 30 / 150 | days kept / aircraft within this range of the centre |
 | `REPLAY_MIN_FREE_GB` | 5 | recording pauses below this much free disk |
 | `NAVDATA_AUTO` / `NAVDATA_CHECK_HOURS` | 1 / 24 | check the AIP of Finland for a new AIRAC amendment (`0` = off) / how often |
+| `NAVDATA_RETRY_MIN` | 60 | after a failed AIP check, try again in this many minutes |
 | `NAVDATA_DIR` | `adsb_radar_ui/data/navdata` | the installed AIP data (created automatically, not in git) |
 | `AIRACT_AUTO` / `AIRACT_CHECK_MIN` | 1 / 30 | check the active areas (NOTAM, AUP / UUP; `0` = off) / how often, minutes |
 | `AIRACT_DIR` / `AIRACT_KEEP_DAYS` | `adsb_radar_ui/data/airact` / 31 | the kept results of the checks (for the replay; not in git) / days kept |

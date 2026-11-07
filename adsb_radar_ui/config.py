@@ -51,6 +51,7 @@ REPLAY_MIN_FREE_GB = float(os.environ.get("REPLAY_MIN_FREE_GB", "5"))   # pause 
 # into data/navdata when a new AIRAC amendment takes effect
 NAVDATA_AUTO = os.environ.get("NAVDATA_AUTO", "1") not in ("0", "false", "no")
 NAVDATA_CHECK_HOURS = float(os.environ.get("NAVDATA_CHECK_HOURS", "24"))
+NAVDATA_RETRY_MIN = float(os.environ.get("NAVDATA_RETRY_MIN", "60"))      # after a failed check: try again sooner
 
 # Used for the wind when the pygeomag model is not installed (deg east, EFHK area)
 MAG_DECLINATION = float(os.environ.get("MAG_DECLINATION", "10.5"))

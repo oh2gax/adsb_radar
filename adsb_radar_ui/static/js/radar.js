@@ -1536,6 +1536,16 @@ function drawScope(){
     const sa = solo ? aircraft.get(solo) : null;
     ctx.fillText(solo ? `SOLO: ${(sa && (sa.callsign || sa.reg)) || solo}` : 'FILTER ON', 10, 24);
   }
+  // a failed / overdue data download (datastatus.js; the details in STATUS → DATA): an alarm, so red.
+  // On the Range line when it fits (the zoom buttons are under it), else on a line of its own.
+  if(window.radarDataAlarm){
+    const red = actRed(), x1 = 10 + ctx.measureText(`Range: 0 – ${fmtRange(rangeNm)} NM`).width + 24;
+    ctx.font = (red ? 'bold ' : '') + '12px ui-monospace, monospace';
+    const fits = x1 + ctx.measureText(window.radarDataAlarm).width < w - 60;
+    if(red) setFill(red);
+    ctx.fillText(window.radarDataAlarm, fits ? x1 : 10, fits ? 8 : ((solo || icaoRanges.n) ? 40 : 24));
+    ctx.font = '12px ui-monospace, monospace'; setFill(colors.text);
+  }
 
   window.labelBoxes = [];
   const ts = labelStyle === 'topsky' && typeof Topsky !== 'undefined' && tsUi;

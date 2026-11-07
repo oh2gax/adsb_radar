@@ -844,11 +844,13 @@ def api_airspace_labels():
 
 def _navdata_keeper():
     """Check the AIP once a day (first 60 s after the start) and install a new amendment when it takes
-    effect; NAVDATA_AUTO=0 switches this off (navdata.py can still be run by hand)."""
+    effect; a failed check is tried again after NAVDATA_RETRY_MIN (60 min). NAVDATA_AUTO=0 switches this
+    off (navdata.py can still be run by hand)."""
     if not config.NAVDATA_AUTO:
         return
     time.sleep(60)
     while True:
+        wait = max(1.0, config.NAVDATA_CHECK_HOURS) * 3600
         try:
             changed, meta, msg = navdata.update(log=lambda t: print(t, file=sys.stderr))
             _navdata.update(last_check=time.time(), error=None, message=msg)
@@ -864,8 +866,9 @@ def _navdata_keeper():
         except Exception as e:                        # network, parse or check failure: keep the old data
             _navdata.update(last_check=time.time(), error=str(e)[:300])
             print(f"[navdata] check failed: {e}", file=sys.stderr)
-        _navdata["next_check"] = time.time() + max(1.0, config.NAVDATA_CHECK_HOURS) * 3600
-        time.sleep(max(1.0, config.NAVDATA_CHECK_HOURS) * 3600)
+            wait = min(wait, max(5.0, config.NAVDATA_RETRY_MIN) * 60)   # a failed check is tried again sooner
+        _navdata["next_check"] = time.time() + wait
+        time.sleep(wait)
 
 @app.route("/api/navaids")
 def api_navaids():
