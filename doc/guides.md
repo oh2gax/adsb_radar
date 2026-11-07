@@ -19,3 +19,16 @@ How to use **RADAR** at radar.oh2gax.org — the air traffic around Helsinki-Van
 - The left pane section by section, and the windows: **TRAFFIC**, **EFHK TRAFFIC** (landings and departures), **METAR & TAF** with the pilot **reports**, What's new and the user guides
 - **Replay** of the last 30 days: speeds 1×–60×, the UTC time as HH : MM lists, the day chooser, share links and ▶ from the traffic list
 - The mobile app `/app` with its replay sheet, the themes, how the data are made, what to do when something looks wrong, and a quick reference
+
+## RADAR-käyttöopas (suomeksi)
+file: RADAR_Kayttoopas.pdf
+version: 1.9
+date: 2026-11-07
+pages: 17
+
+The same user guide in **Finnish**. **RADAR** osoitteessa radar.oh2gax.org — Helsinki-Vantaan lentoliikenne lennonjohdon tutkanäyttönä, Tuusulan MODE-S Wind -vastaanottimesta.
+
+- Tutkakuva: maalit, nopeusvektorit, jäljet, **historiaviiva**, etäisyysrenkaat, karttaviivat, radiosuunnistuslaitteet, lähestymisviivat, taajuudet ja **aktiiviset alueet** (NOTAM, AUP / UUP) punaisella
+- Tunnisteet: **Classic** ja **TopSky**, kuusirivinen **laajennettu tunniste** ilma-aluksen omin Comm-B-ilmatiedoin, punainen **GA**-ylösvetohälytys ja hätäkoodit
+- Vasen paneeli osa osalta ja ikkunat: **TRAFFIC**, **EFHK TRAFFIC**, **METAR & TAF** ja lentäjien havaintoilmoitukset, Mitä uutta ja käyttöoppaat
+- **Toisto** viimeisten 30 vuorokauden ajalta, mobiilisovellus `/app`, tietolähteet, vianetsintä ja pikaopas

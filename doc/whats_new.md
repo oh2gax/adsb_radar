@@ -7,6 +7,10 @@ Format: a version starts with `## v.DDMMYYYY — title`; under it bullets (`- `,
 sub-bullets indented by two spaces) or plain paragraphs. **bold**, *italic* and
 `code` are shown as such.
 
+## v.07112026 — User guide in Finnish
+
+- **RADAR-käyttöopas suomeksi** — the user guide is now also in Finnish: *What's new · Guides → USER GUIDES → RADAR-käyttöopas (suomeksi)*, 17 pages, the same content as the English guide (the program's own names, such as the buttons, stay in English as on the screen). In the app: ☰ → *What's new · Guides*.
+
 ## v.06112026 — Data status, new default view, frequencies
 
 - **Windows stay put** — hiding the left pane (« / ») no longer moves the TRAFFIC LIST, EFHK TRAFFIC, METAR & TAF and What's new windows: each remembers where you put it on the screen and goes back there; a window under the pane when it comes back moves aside only as long as the pane is shown.
